@@ -1,7 +1,9 @@
 import SwiftUI
+import QuickLook
 
 @MainActor
 struct DownloadsView: View {
+    @State private var previewURL: URL?
     @Environment(DownloadManager.self) private var downloads
     @Environment(ForgeStore.self) private var store
 
@@ -37,6 +39,7 @@ struct DownloadsView: View {
                                 HStack {
                                     Label("On your iPhone", systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.green)
                                     Spacer()
+                                    Button("Preview") { previewURL = url }.buttonStyle(.borderless)
                                     ShareLink(item: url) { Label("Save / share", systemImage: "square.and.arrow.up") }
                                         .buttonStyle(.bordered)
                                 }
@@ -56,5 +59,6 @@ struct DownloadsView: View {
             }
         }
         .navigationTitle("Downloads")
+        .quickLookPreview($previewURL)
     }
 }

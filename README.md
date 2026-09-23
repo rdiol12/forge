@@ -1,15 +1,18 @@
 # Forge
 
-A native SwiftUI GitHub companion focused on **Actions, releases, and downloading their files**. Working name: Forge. Requires iOS 17 or later; no third-party runtime dependencies, server, analytics, or AI service.
+A native SwiftUI GitHub companion focused on **Actions, releases, and downloading their files**. Working name: Forge. Requires iOS 17 or later; no third-party iOS runtime dependencies, analytics, or AI service. Standard browser sign-in uses a small OAuth exchange backend.
 
 ## Implemented
 
+- Browser sign-in with GitHub using Apple AuthenticationServices, PKCE, state validation, and Keychain. Activation requires the OAuth registration described in Backend/README.md.
+- Browse repository folders and download individual files, with native Quick Look previews and Save to Files.
+- Hide the Copilot shortcut in Settings; Profile always stays in the tab bar.
 - GitHub-style Home, Inbox, Explore, and Profile tabs with native iOS navigation, grouped lists, repository avatars, blue accents, and GitHub's MIT-licensed Octicons.
 - Favorite public or token-accessible private repositories; old watched repositories automatically appear in Favorites.
 - Open Actions, Releases, and Downloads from Home shortcuts and individual favorite repositories.
 - Search real GitHub repositories, page through results, and add them to Favorites.
 - Browse real GitHub Inbox notifications with All/Unread filters and pagination (classic token required).
-- Issues, pull requests, discussions, code, organizations, full profiles, and Copilot open GitHub in the native Safari sheet. The browser uses its own GitHub sign-in session.
+- Issues, pull requests, discussions, organizations, full profiles, and Copilot open GitHub in the native Safari sheet. The browser uses its own GitHub sign-in session.
 - See recent Actions runs across repositories, filter failures/active runs, and search by repository, title, or branch.
 - Inspect the current run attempt, jobs, and steps; open full job logs on GitHub.
 - List Actions artifacts, see their size/expiry, and download available artifacts as ZIPs.
@@ -94,8 +97,8 @@ Device checks: add/remove a repository; connect/disconnect a token; inspect a fa
 
 Verified on 2026-09-23 with Swift 6.0.3 in the existing Linux container:
 
-- **13 core tests passed**, including token boundaries, binary content negotiation, expired artifacts, safe filenames, repository search, notification destinations, pagination, date decoding, run states, HTTP failures, and repository validation.
-- All 12 app/core Swift files passed Swift syntax parsing; the core and live-check executable compiled successfully.
+- **15 core tests passed**, including token boundaries, binary content negotiation, expired artifacts, safe filenames, OAuth callback validation, raw repository files, repository search, notification destinations, pagination, date decoding, run states, HTTP failures, and repository validation.
+- All 15 app/core Swift files passed Swift syntax parsing; the core and live-check executable compiled successfully.
 - The live check decoded 30 public workflow runs, 22 release assets with counts, 4 jobs, and 4 artifacts from `cli/cli`; it downloaded the 1,971-byte `gh_2.101.0_checksums.txt` through the app's API client and redirect policy.
 - Xcode object IDs, source references, scheme XML, property lists, asset JSON, and the app icon passed structural checks.
 - **Also verified in GitHub Actions:** all 11 tests on macOS, the complete Release iOS device build with Xcode 16.4, and IPA packaging/checksum validation. The binary targets iOS devices with iOS 17 as its minimum version.
@@ -106,9 +109,11 @@ Verified on 2026-09-23 with Swift 6.0.3 in the existing Linux container:
 - Monitoring: latest 30 runs and 20 releases per watched repository, labeled in the interface. Detail screens page through all assets, artifacts, and jobs on demand.
 - Refresh on app activation or pull to refresh. No push notifications or background monitoring.
 - Downloads run in the foreground; keep Forge open until they finish. No resumable or background transfers yet.
-- GitHub.com only, one token at a time. OAuth onboarding and enterprise hosts are not implemented.
+- GitHub.com only, one account at a time. Enterprise hosts are not implemented. Standard browser OAuth needs the GitHub app registration and hosted backend configured; manual tokens remain available under Advanced.
 - The first version displays release notes as selectable text and opens full logs on GitHub.
 - Source-code archives, which have no release-asset download count, remain available through the release's GitHub link.
 - This is an initial implementation, not an App Store submission. Before shipping, validate the iOS build/device flows and finish production onboarding and distribution.
 
 GitHub Mobile already includes many collaboration features. The product hypothesis here is quicker access to build outputs and release download statistics, not complete feature parity or a pixel-for-pixel copy of every official screen. The shell follows the current [App Store screenshots](https://apps.apple.com/us/app/github/id1477376905); collaboration detail pages currently open the web interface. Copilot is a Home shortcut rather than a separate floating control. [Official GitHub Mobile](https://github.com/mobile)
+
+Public feedback and implementation status: [FEEDBACK.md](FEEDBACK.md).

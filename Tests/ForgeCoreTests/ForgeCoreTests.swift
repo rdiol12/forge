@@ -5,6 +5,38 @@ import FoundationNetworking
 #endif
 
 final class ForgeCoreTests: XCTestCase {
+    func testOAuthUsesPKCEAndRejectsMismatchedOrAmbiguousCallbacks() throws {
+        let login = OAuthAttempt(state: "random-state", verifier: String(repeating: "a", count: 43))
+        let authorization = try login.authorizationURL(clientID: "client-123", challenge: "test-challenge")
+        let query = URLComponents(url: authorization, resolvingAgainstBaseURL: false)!.queryItems!
+        XCTAssertEqual(authorization.host, "github.com")
+        XCTAssertEqual(query.first { $0.name == "code_challenge_method" }?.value, "S256")
+        XCTAssertEqual(query.first { $0.name == "redirect_uri" }?.value, OAuthAttempt.callback)
+        XCTAssertFalse(query.contains { $0.name == "client_secret" })
+        XCTAssertEqual(try login.authorizationCode(from: URL(string: "app.forge.github://oauth/callback?state=random-state&code=abc123")!), "abc123")
+        for invalid in [
+            "app.forge.github://oauth/callback?state=wrong&code=abc123",
+            "app.forge.github://oauth/callback?state=random-state&state=random-state&code=abc123",
+            "app.forge.github://other/callback?state=random-state&code=abc123",
+            "app.forge.github://oauth/callback?state=random-state&code=abc123&code=other",
+            "https://oauth/callback?state=random-state&code=abc123",
+            "app.forge.github://oauth/callback?state=random-state&error=access_denied"
+        ] { XCTAssertThrowsError(try login.authorizationCode(from: URL(string: invalid)!)) }
+    }
+
+    func testRepositoryFilesUseRawContentWithoutChangingTheAPIHost() throws {
+        let file = RepositoryFile(name: "hello #1?.txt", path: "docs/hello #1?.txt", sha: "abc", type: "file", size: 123)
+        let spec = try DownloadSpec.repositoryFile(file, in: Repository("owner/repo"))
+        let request = try GitHubClient(token: "test-only").downloadRequest(spec)
+        XCTAssertEqual(request.url?.host, "api.github.com")
+        XCTAssertEqual(request.url?.path, "/repos/owner/repo/contents/docs/hello #1?.txt")
+        XCTAssertNil(request.url?.query)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "application/vnd.github.raw+json")
+        XCTAssertEqual(spec.name, file.name)
+        let traversal = RepositoryFile(name: "file", path: "../file", sha: "abc", type: "file", size: 0)
+        XCTAssertThrowsError(try DownloadSpec.repositoryFile(traversal, in: Repository("owner/repo")))
+    }
+
     func testRepositorySearchEncodesQueriesAndDecodesResults() async throws {
         StubURLProtocol.handler = { request in
             XCTAssertEqual(request.url?.path, "/search/repositories")

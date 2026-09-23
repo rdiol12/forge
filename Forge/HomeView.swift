@@ -5,6 +5,7 @@ struct HomeView: View {
     @Environment(ForgeStore.self) private var store
     @Environment(DownloadManager.self) private var downloads
     @State private var tab = 0
+    @AppStorage("showCopilot") private var showCopilot = false
     @State private var addingRepository = false
     @State private var showingSettings = false
 
@@ -14,10 +15,12 @@ struct HomeView: View {
                 dashboard
                     .navigationTitle("Home")
                     .toolbar {
-                        ToolbarItemGroup(placement: .topBarTrailing) {
-                            Button { addingRepository = true } label: { Image(systemName: "plus") }
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button { addingRepository = true } label: { Image(systemName: "plus").foregroundStyle(Color.primary) }
                                 .accessibilityLabel("Add favorite repository")
-                            Button { tab = 2 } label: { Image(systemName: "magnifyingglass") }
+                        }
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button { tab = 2 } label: { Image(systemName: "magnifyingglass").foregroundStyle(Color.primary) }
                                 .accessibilityLabel("Search GitHub")
                         }
                     }
@@ -30,6 +33,7 @@ struct HomeView: View {
             NavigationStack { ProfileView(showingSettings: $showingSettings) }
                 .tabItem { Label("Profile", image: "octicon-person") }.tag(3)
         }
+        .id(store.account)
         .sheet(isPresented: $addingRepository) { AddRepositoryView() }
         .sheet(isPresented: $showingSettings, onDismiss: { Task { await store.refresh() } }) { SettingsView() }
         .alert("Download", isPresented: Binding(get: { downloads.errorMessage != nil }, set: { if !$0 { downloads.errorMessage = nil } })) {
@@ -47,15 +51,15 @@ struct HomeView: View {
                 GitHubWebRow("Organizations", icon: "organization", color: .orange, path: "/settings/organizations")
             } header: {
                 HStack {
-                    Text("My Work")
+                    Text("My Work").font(.headline)
                     Spacer()
                     Menu {
                         Button("Account and settings") { showingSettings = true }
                         Link("Open GitHub dashboard", destination: URL(string: "https://github.com/dashboard")!)
-                    } label: { Image(systemName: "ellipsis").foregroundStyle(.secondary).frame(width: 32, height: 24) }
+                    } label: { Image(systemName: "ellipsis").foregroundStyle(Color.secondary).frame(width: 32, height: 24) }
                     .accessibilityLabel("My Work options")
-                }
-            }
+                }.padding(.horizontal, -16)
+            }.listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
 
             Section {
                 if store.repositories.isEmpty {
@@ -69,15 +73,15 @@ struct HomeView: View {
                 }
             } header: {
                 HStack {
-                    Text("Favorites")
+                    Text("Favorites").font(.headline)
                     Spacer()
                     Menu {
                         Button("Add a favorite", systemImage: "plus") { addingRepository = true }
                         Button("Manage favorites", systemImage: "slider.horizontal.3") { showingSettings = true }
-                    } label: { Image(systemName: "ellipsis").foregroundStyle(.secondary).frame(width: 32, height: 24) }
+                    } label: { Image(systemName: "ellipsis").foregroundStyle(Color.secondary).frame(width: 32, height: 24) }
                     .accessibilityLabel("Favorite repository options")
-                }
-            }
+                }.padding(.horizontal, -16)
+            }.listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
 
             Section {
                 NavigationLink { ActionsView() } label: {
@@ -102,8 +106,9 @@ struct HomeView: View {
                         Text(downloads.entries.count, format: .number).foregroundStyle(.secondary)
                     }
                 }
-                GitHubWebRow("Copilot", icon: "copilot", color: Color(white: 0.28), path: "/copilot")
-            } header: { Text("Shortcuts") }
+                if showCopilot { GitHubWebRow("Copilot", icon: "copilot", color: Color(white: 0.28), path: "/copilot") }
+            } header: { Text("Shortcuts").font(.headline).padding(.leading, -16) }
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
         }
         .listStyle(.insetGrouped)
         .listSectionSpacing(22)

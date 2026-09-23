@@ -47,6 +47,8 @@ struct SettingsView: View {
     @Environment(DownloadManager.self) private var downloads
     @Environment(\.dismiss) private var dismiss
     @State private var token = ""
+    @State private var signIn = GitHubSignIn()
+    @AppStorage("showCopilot") private var showCopilot = false
     @State private var busy = false
     @State private var error: String?
 
@@ -55,6 +57,26 @@ struct SettingsView: View {
             Form {
                 Section {
                     Label(store.hasToken ? store.account : "Browsing public repositories", systemImage: store.hasToken ? "checkmark.shield" : "globe")
+                    Button {
+                        busy = true
+                        error = nil
+                        Task {
+                            defer { busy = false }
+                            do {
+                                let accessToken = try await signIn.signIn()
+                                try await store.connect(accessToken)
+                                downloads.cancelAll()
+                                await store.refresh()
+                            } catch { self.error = error.localizedDescription }
+                        }
+                    } label: {
+                        HStack {
+                            Text(store.hasToken ? "Sign in with another GitHub account" : "Sign in with GitHub")
+                            Spacer()
+                            if busy { ProgressView() }
+                        }
+                    }.disabled(busy)
+                    DisclosureGroup("Advanced: personal access token") {
                     SecureField(store.hasToken ? "Replace personal access token" : "Personal access token", text: $token)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
                     Button {
@@ -68,6 +90,7 @@ struct SettingsView: View {
                     } label: {
                         HStack { Text("Connect GitHub"); Spacer(); if busy { ProgressView() } }
                     }.disabled(token.isEmpty || busy)
+                    }
                     if store.hasToken {
                         Button("Disconnect", role: .destructive) {
                             do { try store.disconnect(); downloads.cancelAll() }
@@ -76,9 +99,14 @@ struct SettingsView: View {
                     }
                     if let error { ErrorNotice(message: error) }
                 } header: { Text("GitHub account") }
-                  footer: { Text("Your token stays in this iPhone's Keychain and is sent only to GitHub's API. Disconnecting stops active downloads; files you've saved remain in Downloads.") }
+                  footer: { Text("You sign in on GitHub's secure page. Forge stores the access token in this iPhone's Keychain. OAuth requests repo access for private files and notifications access for Inbox. Disconnecting stops active downloads; files you've saved remain in Downloads.") }
 
-                Section("Token access") {
+                Section("Home") {
+                    Toggle("Show Copilot shortcut", isOn: $showCopilot)
+                    Text("Profile always stays in the tab bar.").font(.footnote).foregroundStyle(.secondary)
+                }
+
+                Section("Manual token access") {
                     LabeledContent("Actions", value: "Read-only")
                     LabeledContent("Contents", value: "Read-only")
                     Text("Create a fine-grained token for your favorite repositories. Actions read access enables artifact downloads; Contents read access enables private release downloads.")
@@ -103,7 +131,7 @@ struct SettingsView: View {
                 Section("About Forge") {
                     NavigationLink("Open-source licenses") {
                         ScrollView {
-                            Text((Bundle.main.url(forResource: "ThirdPartyNotices", withExtension: "md").flatMap { try? String(contentsOf: $0, encoding: .utf8) }) ?? "GitHub Octicons ? MIT License")
+                            Text((Bundle.main.url(forResource: "ThirdPartyNotices", withExtension: "md").flatMap { try? String(contentsOf: $0, encoding: .utf8) }) ?? "GitHub Octicons - MIT License")
                                 .font(.footnote).textSelection(.enabled).padding()
                         }.navigationTitle("Licenses").navigationBarTitleDisplayMode(.inline)
                     }

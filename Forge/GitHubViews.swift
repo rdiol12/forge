@@ -19,7 +19,7 @@ struct WorkLabel: View {
         HStack(spacing: 12) {
             Octicon(icon, size: 20).foregroundStyle(.white).frame(width: 30, height: 30)
                 .background(color, in: RoundedRectangle(cornerRadius: 6))
-            Text(title).foregroundStyle(.primary)
+            Text(title).foregroundStyle(Color.primary)
         }
     }
 }
@@ -73,6 +73,7 @@ struct GitHubWebRow: View {
                 Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(.tertiary)
             }
         }
+        .buttonStyle(.plain)
         .sheet(isPresented: $showingBrowser) { GitHubBrowser(url: URL(string: "https://github.com\(path)")!).ignoresSafeArea() }
     }
 }
@@ -141,7 +142,7 @@ struct RepositoryView: View {
                 if let error { ErrorNotice(message: error) }
             }
             Section {
-                GitHubWebRow("Code", icon: "repo", color: Color(white: 0.28), path: "/\(repository.fullName)")
+                NavigationLink { RepositoryFilesView(repository: repository) } label: { WorkLabel("Code", icon: "repo", color: Color(white: 0.28)) }
                 GitHubWebRow("Issues", icon: "issue-opened", color: .green, path: "/\(repository.fullName)/issues")
                 GitHubWebRow("Pull Requests", icon: "git-pull-request", color: .blue, path: "/\(repository.fullName)/pulls")
                 GitHubWebRow("Discussions", icon: "comment-discussion", color: .purple, path: "/\(repository.fullName)/discussions")

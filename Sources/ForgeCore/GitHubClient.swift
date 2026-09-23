@@ -38,13 +38,13 @@ struct GitHubClient: Sendable {
     }
 
     func request(_ path: String, query: [URLQueryItem] = [], accept: String = "application/vnd.github+json") throws -> URLRequest {
-        guard path.hasPrefix("/"), !path.split(separator: "/").contains(where: { $0 == "." || $0 == ".." }),
-              !path.contains("?"), !path.contains("#"), !path.contains(":") else {
+        guard path.hasPrefix("/"), !path.split(separator: "/").contains(where: { $0 == "." || $0 == ".." }) else {
             throw GitHubError("Invalid GitHub API path.")
         }
         var components = URLComponents()
         components.scheme = "https"
         components.host = "api.github.com"
+        // URLComponents encodes reserved characters in file names as path data.
         components.path = path
         if !query.isEmpty { components.queryItems = query }
         guard let url = components.url else { throw GitHubError("Invalid GitHub URL.") }

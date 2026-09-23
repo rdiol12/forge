@@ -121,6 +121,16 @@ struct RepositorySummary: Decodable, Identifiable, Sendable {
     let language: String?
 }
 
+struct RepositoryFile: Decodable, Identifiable, Sendable {
+    let name: String
+    let path: String
+    let sha: String
+    let type: String
+    let size: Int64
+    var id: String { path }
+    var safePath: Bool { !path.isEmpty && !path.hasPrefix("/") && !path.split(separator: "/", omittingEmptySubsequences: false).contains { $0.isEmpty || $0 == "." || $0 == ".." } }
+}
+
 struct GitHubNotification: Decodable, Identifiable, Sendable {
     struct Subject: Decodable, Sendable {
         let title: String

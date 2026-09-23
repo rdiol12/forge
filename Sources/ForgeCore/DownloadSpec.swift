@@ -18,6 +18,13 @@ struct DownloadSpec: Codable, Identifiable, Sendable {
              size: asset.size, requiresAuthentication: false)
     }
 
+    static func repositoryFile(_ file: RepositoryFile, in repository: Repository) throws -> Self {
+        guard file.type == "file", file.safePath else { throw GitHubError("This repository file cannot be downloaded.") }
+        return Self(id: "file-\(repository.id)-\(file.sha)-\(file.path)", name: safeFilename(file.name), repository: repository.fullName,
+                    path: "/repos/\(repository.fullName)/contents/\(file.path)", accept: "application/vnd.github.raw+json",
+                    size: file.size, requiresAuthentication: false)
+    }
+
     static func artifact(_ artifact: Artifact, in repository: Repository, now: Date = .now) throws -> Self {
         guard !artifact.isExpired(at: now) else { throw GitHubError("This artifact has expired and cannot be downloaded.") }
         return Self(id: "artifact-\(repository.id)-\(artifact.id)", name: safeFilename(artifact.name + ".zip"), repository: repository.fullName,

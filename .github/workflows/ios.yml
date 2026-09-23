@@ -38,6 +38,9 @@ jobs:
       - name: Test the shared Swift core
         run: swift test
 
+      - name: Test OAuth backend security boundaries
+        run: node --test Backend/auth.test.mjs
+
       - name: Build the iOS device app
         run: |
           set -euo pipefail
@@ -109,7 +112,9 @@ jobs:
 
           **Unsigned IPA:** sign Forge-unsigned.ipa with your sideloading tool before installing. No Apple certificate or provisioning profile is included.
 
-          GitHub-style Home, Inbox, Explore, and Profile navigation. Includes Actions monitoring, build artifact downloads, release download counts, and Save to Files.
+          GitHub-style navigation, repository file downloads and previews, optional Copilot, Actions monitoring, build artifact downloads, release download counts, and Save to Files.
+
+          Browser sign-in is implemented and awaits GitHub OAuth registration and backend activation. Manual token sign-in remains available in Settings.
 
           Commit: $GITHUB_SHA
           Build: $GITHUB_RUN_NUMBER (attempt $GITHUB_RUN_ATTEMPT)
@@ -120,7 +125,7 @@ jobs:
           gh release create "$tag" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Forge $version ײ²ֲ· build $GITHUB_RUN_NUMBER (unsigned)" \
+            --title "Forge $version - build $GITHUB_RUN_NUMBER (unsigned)" \
             --notes-file "$RUNNER_TEMP/release-notes.md" \
             --draft --prerelease="$prerelease"
           gh release upload "$tag" dist/Forge-unsigned.ipa dist/SHA256SUMS --repo "$GITHUB_REPOSITORY"

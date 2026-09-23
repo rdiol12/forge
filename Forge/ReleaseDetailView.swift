@@ -1,4 +1,5 @@
 import SwiftUI
+import QuickLook
 
 @MainActor
 struct ReleaseDetailView: View {
@@ -100,6 +101,7 @@ struct ReleaseDetailView: View {
 @MainActor
 struct DownloadControl: View {
     let specification: DownloadSpec
+    @State private var previewURL: URL?
     @Environment(ForgeStore.self) private var store
     @Environment(DownloadManager.self) private var downloads
 
@@ -112,8 +114,12 @@ struct DownloadControl: View {
                 Button("Cancel", role: .cancel) { downloads.cancel(active) }.font(.caption)
             }
         } else if let saved = downloads.entries.first(where: { $0.specification.id == specification.id && $0.relativePath != nil }), let url = downloads.fileURL(for: saved) {
-            ShareLink(item: url) { Label("Save to Files or share", systemImage: "square.and.arrow.up") }
-                .buttonStyle(.bordered).controlSize(.regular)
+            HStack {
+                Button { previewURL = url } label: { Label("Preview", systemImage: "doc.text.magnifyingglass") }
+                    .buttonStyle(.bordered)
+                ShareLink(item: url) { Label("Save or share", systemImage: "square.and.arrow.up") }
+                    .buttonStyle(.bordered)
+            }.quickLookPreview($previewURL)
         } else {
             Button {
                 downloads.start(specification, client: store.client)
