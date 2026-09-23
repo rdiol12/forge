@@ -191,7 +191,7 @@ struct ExploreView: View {
                         }
                     }
                 }
-                if busy { ProgressView("Searching repositories?") }
+                if busy { ProgressView("Searching repositories...") }
                 if let error {
                     ErrorNotice(message: error)
                     Button("Retry") { Task { await load(reset: page == 0) } }
@@ -271,7 +271,7 @@ struct InboxView: View {
                         }.padding(.vertical, 6)
                     }.disabled(entry.webURL == nil)
                 }
-                if busy { ProgressView("Loading notifications?") }
+                if busy { ProgressView("Loading notifications...") }
                 if let error {
                     Section {
                         ErrorNotice(message: error)

@@ -19,6 +19,7 @@ struct HomeView: View {
                             Button { addingRepository = true } label: { Image(systemName: "plus").foregroundStyle(Color.primary) }
                                 .accessibilityLabel("Add favorite repository")
                         }
+                        if #available(iOS 26.0, *) { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
                         ToolbarItem(placement: .topBarTrailing) {
                             Button { tab = 2 } label: { Image(systemName: "magnifyingglass").foregroundStyle(Color.primary) }
                                 .accessibilityLabel("Search GitHub")
@@ -145,7 +146,7 @@ struct ActionsView: View {
                     NavigationLink { RunDetailView(entry: entry) } label: { RunRow(entry: entry) }
                 }
                 if visible.isEmpty {
-                    ContentUnavailableView("No matching runs", systemImage: "play.circle", description: Text(store.isRefreshing ? "Checking your repositories?" : "Add a favorite repository on Home, change the filter, or pull to refresh."))
+                    ContentUnavailableView("No matching runs", systemImage: "play.circle", description: Text(store.isRefreshing ? "Checking your repositories..." : "Add a favorite repository on Home, change the filter, or pull to refresh."))
                 }
             } header: { Text(repository?.fullName ?? "Recent activity").textCase(nil) }
               footer: { Text("Latest 30 runs per favorite repository. Pull to refresh.") }
