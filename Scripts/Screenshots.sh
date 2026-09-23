@@ -1,10 +1,18 @@
 #!/bin/bash
 # Simulator-only public favorites for a reproducible visual check; no credentials.
-set -euo pipefail
+set -euxo pipefail
 xcodebuild -project Forge.xcodeproj -scheme Forge -configuration Debug \
   -destination 'generic/platform=iOS Simulator' -derivedDataPath build-simulator \
   CODE_SIGNING_ALLOWED=NO build 2>&1 | tee "$RUNNER_TEMP/simulator-build.log" | xcbeautify
-runtime=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; print(next(r["identifier"] for r in json.load(sys.stdin)["runtimes"] if r["isAvailable"] and r["name"].startswith("iOS 26")))')
+runtime=$(python3 - <<'PY'
+import json, subprocess
+# Fail promptly when CoreSimulator discovery stalls on a hosted runner.
+result = subprocess.run(['xcrun', 'simctl', 'list', 'runtimes', '-j'],
+                        check=True, capture_output=True, text=True, timeout=120)
+print(next(r['identifier'] for r in json.loads(result.stdout)['runtimes']
+           if r['isAvailable'] and r['name'].startswith('iOS 26')))
+PY
+)
 device=$(xcrun simctl create 'Forge visual check' com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro "$runtime")
 trap 'xcrun simctl shutdown "$device" || true' EXIT
 xcrun simctl boot "$device"

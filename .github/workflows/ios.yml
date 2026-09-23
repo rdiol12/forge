@@ -30,8 +30,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Show build tools
+      - name: Select and show build tools
         run: |
+          sudo xcode-select --switch "$DEVELOPER_DIR"
+          xcode-select -p
           xcodebuild -version
           swift --version
 
@@ -57,6 +59,7 @@ jobs:
             build 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" | xcbeautify
 
       - name: Check the iPhone simulator layout
+        timeout-minutes: 8
         run: bash Scripts/Screenshots.sh
 
       - name: Keep light and dark screenshots
