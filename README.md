@@ -13,11 +13,12 @@ A native SwiftUI GitHub companion focused on **Actions, releases, and downloadin
 - Merge pull requests with the repository's allowed merge, squash, or rebase methods. A confirmation identifies the repository, branches, and current commit; GitHub rejects a changed head or unmet repository rules.
 - Hide the Copilot shortcut in Settings; Profile always stays in the tab bar.
 - GitHub-style Home, Inbox, Explore, and Profile tabs with native iOS navigation, grouped lists, repository avatars, blue accents, and GitHub's MIT-licensed Octicons.
+- Native Profile shortcuts for account details, your repositories (including accessible private repositories), starred repositories, and organizations. Profile → Your repository Actions opens your repositories' workflows without a Favorites requirement.
 - Favorite public or token-accessible private repositories; old watched repositories automatically appear in Favorites.
-- Open Actions, Releases, and Downloads from Home shortcuts and individual favorite repositories.
+- Open Actions, Releases, and Downloads from Home shortcuts. Any accessible repository can open Actions and Releases directly, with pagination; Favorites is only required for the combined Home feed.
 - Search real GitHub repositories, page through results, and add them to Favorites.
 - Browse real GitHub Inbox notifications with All/Unread filters and pagination (OAuth or a classic token required).
-- GitHub issue, pull-request, Discussion, and repository links resolve to native Forge screens. Remaining web destinations (including full profiles, organizations, Copilot, token creation, and full Actions logs) open in the in-app Safari sheet. Website login remains separate from Forge's API connection; browser cookies are not accessed or reused.
+- GitHub profile, repository-list, issue, pull-request, Discussion, repository, Actions-list, and Releases-list links resolve to native Forge screens. Remaining web destinations (including Copilot, token creation, and full Actions logs) open in the in-app Safari sheet. Website login remains separate from Forge's API connection; browser cookies are not accessed or reused.
 - See recent Actions runs across repositories, filter failures/active runs, and search by repository, title, or branch.
 - Inspect the current run attempt, jobs, and steps; open full job logs on GitHub.
 - List Actions artifacts, see their size/expiry, and download available artifacts as ZIPs.
@@ -27,7 +28,7 @@ A native SwiftUI GitHub companion focused on **Actions, releases, and downloadin
 - Track download progress, cancel, retry, and use the native share sheet to **Save to Files**.
 - Keep completed downloads in the app's local library, accessible offline and through Files → On My iPhone → Forge → Downloads.
 
-The app starts empty and uses real GitHub data. There are no fabricated metrics or demo downloads.
+The app starts empty and uses real GitHub data. There are no fabricated metrics or demo downloads. Your repository and organization lists reflect the repositories and memberships your connection can access. Fine-grained tokens may need Starring read permission; organization visibility also depends on the token's organization access.
 
 ## Download counts: the distinction that matters
 
@@ -124,7 +125,7 @@ Verified on 2026-09-23 with Swift 6.0.3 in the existing Linux container:
 - Source-code archives, which have no release-asset download count, remain available through the release's GitHub link.
 - This is an initial implementation, not an App Store submission. Before shipping, validate the iOS build/device flows and finish production onboarding and distribution.
 
-GitHub Mobile already includes many collaboration features. The product hypothesis here is quicker access to build outputs and release download statistics, not complete feature parity or a pixel-for-pixel copy of every official screen. The shell follows the current [App Store screenshots](https://apps.apple.com/us/app/github/id1477376905); Issues, Discussions, pull requests, and code have native screens; full profiles and organizations still use an in-app web view. Copilot is a Home shortcut rather than a separate floating control. [Official GitHub Mobile](https://github.com/mobile)
+GitHub Mobile already includes many collaboration features. The product hypothesis here is quicker access to build outputs and release download statistics, not complete feature parity or a pixel-for-pixel copy of every official screen. The shell follows the current [App Store screenshots](https://apps.apple.com/us/app/github/id1477376905); Issues, Discussions, pull requests, code, profiles, repository lists, and organizations have native screens. Copilot is a Home shortcut rather than a separate floating control. [Official GitHub Mobile](https://github.com/mobile)
 
 Public feedback and implementation status: [FEEDBACK.md](FEEDBACK.md).
 

@@ -50,7 +50,7 @@ struct HomeView: View {
                 NavigationLink { ConversationListView(kind: .pullRequest) } label: { WorkLabel("Pull Requests", icon: "git-pull-request", color: .blue) }
                 NavigationLink { ConversationListView(kind: .discussion) } label: { WorkLabel("Discussions", icon: "comment-discussion", color: .purple) }
                 NavigationLink { FavoritesView() } label: { WorkLabel("Top Repositories", icon: "repo", color: Color(white: 0.28)) }
-                GitHubWebRow("Organizations", icon: "organization", color: .orange, path: "/settings/organizations")
+                NavigationLink { OrganizationListView() } label: { WorkLabel("Organizations", icon: "organization", color: .orange) }
             } header: {
                 HStack {
                     Text("My Work").font(.headline)
@@ -126,10 +126,16 @@ struct ActionsView: View {
     @Environment(ForgeStore.self) private var store
     @State private var filter = "All"
     @State private var search = ""
+    @State private var repositoryRuns: [RepositoryRun] = []
+    @State private var page = 0
+    @State private var more = false
+    @State private var busy = false
+    @State private var error: String?
+    @State private var requestID = UUID()
+    @Environment(\.scenePhase) private var scenePhase
 
     private var visible: [RepositoryRun] {
-        store.runs.filter { entry in
-            (repository == nil || entry.repository.id == repository?.id) &&
+        (repository == nil ? store.runs : repositoryRuns).filter { entry in
             (filter == "All" || (filter == "Failed" && entry.run.state == .failed) ||
              (filter == "Active" && [.running, .queued].contains(entry.run.state))) &&
             (search.isEmpty || "\(entry.repository.fullName) \(entry.run.displayTitle) \(entry.run.headBranch ?? "")".localizedCaseInsensitiveContains(search))
@@ -138,23 +144,57 @@ struct ActionsView: View {
 
     var body: some View {
         List {
+            if repository == nil && store.hasToken {
+                NavigationLink { AccountRepositoriesView(collection: .owned, showsActions: true) } label: {
+                    WorkLabel("Your repository Actions", icon: "repo", color: .blue)
+                }
+            }
             Picker("Run status", selection: $filter) {
                 ForEach(["All", "Failed", "Active"], id: \.self) { Text($0).tag($0) }
             }.pickerStyle(.segmented).listRowBackground(Color.clear).listRowInsets(EdgeInsets())
-            if !store.errors.isEmpty { RefreshErrors() }
+            if repository == nil && !store.errors.isEmpty { RefreshErrors() }
             Section {
                 ForEach(visible) { entry in
                     NavigationLink { RunDetailView(entry: entry) } label: { RunRow(entry: entry) }
                 }
-                if visible.isEmpty {
-                    ContentUnavailableView("No matching runs", systemImage: "play.circle", description: Text(store.isRefreshing ? "Checking your repositories..." : "Add a favorite repository on Home, change the filter, or pull to refresh."))
+                if busy { ProgressView("Loading workflow runs…") }
+                if let error {
+                    ErrorNotice(message: error)
+                    Button("Retry") { Task { await load(reset: page == 0) } }
+                }
+                if more && !busy { Button("Load more runs") { Task { await load(reset: false) } } }
+                if visible.isEmpty && !busy && error == nil {
+                    ContentUnavailableView("No matching runs", systemImage: "play.circle", description: Text(repository == nil ? "Open Your repository Actions, add a favorite, or change the filter." : "No runs match the current filter. Pull to refresh or load more runs."))
                 }
             } header: { Text(repository?.fullName ?? "Recent activity").textCase(nil) }
-              footer: { Text("Latest 30 runs per favorite repository. Pull to refresh.") }
+              footer: { Text(repository == nil ? "Latest 30 runs per favorite repository. Open Your repository Actions to browse your other repositories." : "Runs for this repository. Open a run to see jobs, test steps, and artifacts.") }
         }
         .navigationTitle("Actions")
         .searchable(text: $search, prompt: "Repository, branch or run")
-        .refreshable { await store.refresh() }
+        .task(id: store.account) { await load(reset: true) }
+        .refreshable { await load(reset: true) }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { await load(reset: true) } }
+        }
+    }
+
+    private func load(reset: Bool) async {
+        guard let repository else { await store.refresh(); return }
+        if !reset && busy { return }
+        let id = UUID(), account = store.account
+        requestID = id
+        busy = true
+        error = nil
+        if reset { repositoryRuns = []; page = 0; more = false }
+        let nextPage = page + 1
+        defer { if requestID == id { busy = false } }
+        do {
+            let result = try await store.client.runs(in: repository, page: nextPage)
+            guard !Task.isCancelled, requestID == id, account == store.account else { return }
+            repositoryRuns += result.filter { run in !repositoryRuns.contains { $0.run.id == run.id } }.map { RepositoryRun(repository: repository, run: $0) }
+            page = nextPage
+            more = result.count == 30
+        } catch { if !Task.isCancelled, requestID == id, account == store.account { self.error = error.localizedDescription } }
     }
 }
 
@@ -164,10 +204,15 @@ struct ReleasesView: View {
     @Environment(ForgeStore.self) private var store
     @State private var unreadOnly = false
     @State private var search = ""
+    @State private var repositoryReleases: [RepositoryRelease] = []
+    @State private var page = 0
+    @State private var more = false
+    @State private var busy = false
+    @State private var error: String?
+    @State private var requestID = UUID()
 
     private var visible: [RepositoryRelease] {
-        store.releases.filter {
-            (repository == nil || $0.repository.id == repository?.id) &&
+        (repository == nil ? store.releases : repositoryReleases).filter {
             (!unreadOnly || !store.readReleases.contains($0.id)) &&
             (search.isEmpty || "\($0.repository.fullName) \($0.release.title) \($0.release.tagName)".localizedCaseInsensitiveContains(search))
         }
@@ -176,7 +221,7 @@ struct ReleasesView: View {
     var body: some View {
         List {
             Toggle("Unread only", isOn: $unreadOnly)
-            if !store.errors.isEmpty { RefreshErrors() }
+            if repository == nil && !store.errors.isEmpty { RefreshErrors() }
             Section {
                 ForEach(visible) { entry in
                     NavigationLink { ReleaseDetailView(entry: entry) } label: {
@@ -201,15 +246,41 @@ struct ReleasesView: View {
                         }.padding(.vertical, 6)
                     }
                 }
-                if visible.isEmpty {
-                    ContentUnavailableView("No matching releases", systemImage: "tag", description: Text("Add a favorite repository on Home or change the filter."))
+                if busy { ProgressView("Loading releases…") }
+                if let error {
+                    ErrorNotice(message: error)
+                    Button("Retry") { Task { await load(reset: page == 0) } }
+                }
+                if more && !busy { Button("Load more releases") { Task { await load(reset: false) } } }
+                if visible.isEmpty && !busy && error == nil {
+                    ContentUnavailableView("No matching releases", systemImage: "tag", description: Text(repository == nil ? "Add a favorite repository on Home or change the filter." : "No published releases match this filter. Pull to refresh or load more releases."))
                 }
             } header: { Text(repository?.fullName ?? "Latest releases").textCase(nil) }
-              footer: { Text("Latest 20 releases per favorite repository. Open a release to see file download counts.") }
+              footer: { Text(repository == nil ? "Latest 20 releases per favorite repository. Open a release to see file download counts." : "Open a release to download its files and see download counts.") }
         }
         .navigationTitle("Releases")
         .searchable(text: $search, prompt: "Repository or version")
-        .refreshable { await store.refresh() }
+        .task(id: store.account) { await load(reset: true) }
+        .refreshable { await load(reset: true) }
+    }
+
+    private func load(reset: Bool) async {
+        guard let repository else { await store.refresh(); return }
+        if !reset && busy { return }
+        let id = UUID(), account = store.account
+        requestID = id
+        busy = true
+        error = nil
+        if reset { repositoryReleases = []; page = 0; more = false }
+        let nextPage = page + 1
+        defer { if requestID == id { busy = false } }
+        do {
+            let result = try await store.client.releases(in: repository, page: nextPage)
+            guard !Task.isCancelled, requestID == id, account == store.account else { return }
+            repositoryReleases += result.filter { release in !release.draft && !repositoryReleases.contains { $0.release.id == release.id } }.map { RepositoryRelease(repository: repository, release: $0) }
+            page = nextPage
+            more = result.count == 20
+        } catch { if !Task.isCancelled, requestID == id, account == store.account { self.error = error.localizedDescription } }
     }
 }
 
@@ -222,7 +293,7 @@ private struct RunRow: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(entry.repository.fullName).font(.caption).foregroundStyle(.secondary)
                 Text(entry.run.displayTitle).font(.body.weight(.semibold)).lineLimit(3)
-                Text("\(entry.run.name ?? "Workflow") #\(entry.run.runNumber)").font(.caption).foregroundStyle(.secondary)
+                Text("\(entry.run.name ?? "Workflow") #\(String(entry.run.runNumber))").font(.caption).foregroundStyle(.secondary)
                 HStack {
                     Label(entry.run.headBranch ?? "Unknown branch", systemImage: "arrow.triangle.branch").lineLimit(1)
                     Spacer()

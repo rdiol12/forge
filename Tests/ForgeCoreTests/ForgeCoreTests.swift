@@ -5,6 +5,88 @@ import FoundationNetworking
 #endif
 
 final class ForgeCoreTests: XCTestCase {
+    func testProfileAndRepositoryActivityLinksHaveNativeDestinations() throws {
+        let repo = try Repository("owner/repo")
+        let destinations: [(String, GitHubRoute)] = [
+            ("/octocat", .profile("octocat")), ("/octocat?tab=repositories", .repositories(.user("octocat"))),
+            ("/octocat?tab=stars", .repositories(.stars("octocat"))), ("/settings/organizations", .organizations),
+            ("/orgs/github/repositories", .repositories(.organization("github"))),
+            ("/owner/repo/actions", .actions(repo)), ("/owner/repo/releases", .releases(repo))
+        ]
+        for (path, destination) in destinations {
+            XCTAssertEqual(GitHubRoute(URL(string: "https://github.com" + path)!), destination, path)
+        }
+        for path in ["/settings/tokens", "/login", "/dashboard", "/octocat?tab=unknown", "/octocat?tab=stars&tab=repositories"] {
+            XCTAssertNil(GitHubRoute(URL(string: "https://github.com" + path)!), path)
+        }
+    }
+
+    func testOwnRepositoriesIncludePrivateReposAndUseAuthenticatedPagination() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        StubURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.path, "/user/repos")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer test-only")
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!
+            XCTAssertEqual(query.first { $0.name == "affiliation" }?.value, "owner")
+            XCTAssertEqual(query.first { $0.name == "visibility" }?.value, "all")
+            XCTAssertEqual(query.first { $0.name == "page" }?.value, "2")
+            XCTAssertEqual(query.first { $0.name == "per_page" }?.value, "30")
+            return (200, "[{\"id\":1,\"full_name\":\"owner/private-repo\",\"private\":true,\"stargazers_count\":0}]")
+        }
+        let result = try await GitHubClient(token: "test-only", session: session).accountRepositories(.owned, page: 2)
+        XCTAssertEqual(result.first?.fullName, "owner/private-repo")
+        StubURLProtocol.handler = { _ in XCTFail("A disconnected account must not request private repositories"); return (200, "[]") }
+        do { _ = try await GitHubClient(session: session).accountRepositories(.owned, page: 1); XCTFail() } catch {}
+    }
+
+    func testNativeProfileStarsAndOrganizationsUseGitHubData() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let client = GitHubClient(token: "test-only", session: session)
+        StubURLProtocol.handler = { request in
+            switch request.url!.path {
+            case "/user": return (200, "{\"id\":1,\"login\":\"owner\",\"name\":\"Owner\",\"bio\":null,\"followers\":2,\"public_repos\":5}")
+            case "/user/starred": return (200, "[{\"id\":9,\"full_name\":\"org/starred\",\"stargazers_count\":7}]")
+            case "/user/orgs": return (200, "[{\"id\":2,\"login\":\"org\",\"description\":\"Our team\"}]")
+            case "/orgs/org/repos": return (200, "[{\"id\":8,\"full_name\":\"org/project\",\"stargazers_count\":0}]")
+            default: XCTFail("Unexpected account endpoint"); return (404, "{}")
+            }
+        }
+        let profile = try await client.profile()
+        XCTAssertEqual(profile.login, "owner")
+        XCTAssertEqual(profile.name, "Owner")
+        XCTAssertNil(profile.bio)
+        let stars = try await client.accountRepositories(.starred, page: 1)
+        XCTAssertEqual(stars.first?.fullName, "org/starred")
+        let organizations = try await client.organizations(page: 1)
+        XCTAssertEqual(organizations.first?.login, "org")
+        let repos = try await client.accountRepositories(.organization("org"), page: 1)
+        XCTAssertEqual(repos.first?.fullName, "org/project")
+        StubURLProtocol.handler = { _ in XCTFail("Invalid account paths must not reach GitHub"); return (200, "[]") }
+        do { _ = try await client.accountRepositories(.organization("../user"), page: 1); XCTFail() } catch {}
+    }
+
+    func testActionsCanPageThroughAnyAccessibleRepository() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        StubURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.path, "/repos/owner/unfavorited/actions/runs")
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!
+            XCTAssertEqual(query.first { $0.name == "page" }?.value, "2")
+            return (200, "{\"workflow_runs\":[{\"id\":42,\"display_title\":\"Build\",\"head_sha\":\"abc\",\"status\":\"completed\",\"conclusion\":\"success\",\"run_number\":12,\"run_attempt\":1,\"html_url\":\"https://github.com/owner/unfavorited/actions/runs/42\",\"created_at\":\"2026-09-23T09:00:00Z\",\"updated_at\":\"2026-09-23T09:01:00Z\"}]}")
+        }
+        let runs = try await GitHubClient(token: "test-only", session: session).runs(in: Repository("owner/unfavorited"), page: 2)
+        XCTAssertEqual(runs.first?.id, 42)
+        XCTAssertEqual(runs.first?.state, .passed)
+    }
+
     func testNotificationReadSyncRequiresSuccessAndAValidThreadID() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [StubURLProtocol.self]
@@ -149,7 +231,7 @@ final class ForgeCoreTests: XCTestCase {
         XCTAssertEqual(GitHubRoute(URL(string: "https://github.com/owner/repo/pull/42/files")!), .conversation(repo, 42, .pullRequest))
         XCTAssertEqual(GitHubRoute(URL(string: "https://github.com/owner/repo/discussions/7#discussioncomment-1")!), .conversation(repo, 7, .discussion))
         XCTAssertEqual(GitHubRoute(URL(string: "https://github.com/owner/repo")!), .repository(repo))
-        for url in ["https://github.com.evil.example/owner/repo", "https://user@github.com/owner/repo", "https://github.com:444/owner/repo", "http://github.com/owner/repo", "https://github.com/owner/repo/issues/nope", "https://github.com/settings/organizations"] {
+        for url in ["https://github.com.evil.example/owner/repo", "https://user@github.com/owner/repo", "https://github.com:444/owner/repo", "http://github.com/owner/repo", "https://github.com/owner/repo/issues/nope", "https://github.com/settings/tokens"] {
             XCTAssertNil(GitHubRoute(URL(string: url)!))
         }
     }

@@ -6,6 +6,31 @@ struct CheckNative {
         // Optional developer token comes from stdin, never arguments, files, or logs.
         let token = CommandLine.arguments.contains("--authenticated") ? (readLine() ?? "") : ""
         let client = GitHubClient(token: token)
+        if CommandLine.arguments.contains("--account") {
+            guard !token.isEmpty else { throw GitHubError("The account check needs --authenticated and a developer token on stdin.") }
+            let profile = try await client.profile()
+            var page = 1
+            var count = 0
+            var foundForge = false
+            while true {
+                let repositories = try await client.accountRepositories(.owned, page: page)
+                count += repositories.count
+                foundForge = foundForge || repositories.contains { $0.fullName.lowercased() == "rdiol12/forge-ios" }
+                if foundForge || repositories.count < 30 { break }
+                page += 1
+            }
+            guard !profile.login.isEmpty, foundForge else { throw GitHubError("The native account repository list did not include the private Forge repository.") }
+            let stars = try await client.accountRepositories(.starred, page: 1)
+            let organizations = try await client.organizations(page: 1)
+            let repository = try Repository("rdiol12/forge-ios")
+            let runs = try await client.runs(in: repository)
+            guard let run = runs.first else { throw GitHubError("The private repository has no workflow runs.") }
+            let jobs = try await client.jobs(in: repository, run: run, page: 1)
+            let artifacts = try await client.artifacts(in: repository, runID: run.id, page: 1)
+            print("PASS: Native profile, \(count) own repositories across \(page) pages including private Forge, \(stars.count) stars, and \(organizations.count) visible organizations.")
+            print("PASS: Own repository Actions: \(runs.count) runs, \(jobs.count) jobs, \(artifacts.count) artifacts; no Favorites state required.")
+            return
+        }
         if CommandLine.arguments.contains("--forge-build") {
             guard !token.isEmpty else { throw GitHubError("The private build check needs --authenticated and a developer token on stdin.") }
             try await checkForgeBuild(client)

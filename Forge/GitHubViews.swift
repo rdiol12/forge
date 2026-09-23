@@ -61,6 +61,11 @@ struct GitHubDestination: View {
     let url: URL
     var body: some View {
         switch GitHubRoute(url) {
+        case let .profile(login): AccountProfileView(login: login)
+        case let .repositories(collection): AccountRepositoriesView(collection: collection)
+        case .organizations: OrganizationListView()
+        case let .actions(repository): ActionsView(repository: repository)
+        case let .releases(repository): ReleasesView(repository: repository)
         case let .repository(repository): RepositoryView(repository: repository)
         case let .conversations(repository, kind): ConversationListView(kind: kind, repository: repository)
         case let .conversation(repository, number, kind): ConversationDetailView(repository: repository, number: number, kind: kind)
@@ -208,12 +213,8 @@ struct RepositoryView: View {
                 NavigationLink { ConversationListView(kind: .discussion, repository: repository) } label: { WorkLabel("Discussions", icon: "comment-discussion", color: .purple) }
             }
             Section {
-                if isFavorite {
-                    NavigationLink { ActionsView(repository: repository) } label: { WorkLabel("Actions", icon: "workflow", color: .blue) }
-                    NavigationLink { ReleasesView(repository: repository) } label: { WorkLabel("Releases", icon: "tag", color: .green) }
-                } else {
-                    Text("Add this repository to favorites to monitor Actions, see release download counts, and download artifacts.").font(.subheadline).foregroundStyle(.secondary)
-                }
+                NavigationLink { ActionsView(repository: repository) } label: { WorkLabel("Actions", icon: "workflow", color: .blue) }
+                NavigationLink { ReleasesView(repository: repository) } label: { WorkLabel("Releases", icon: "tag", color: .green) }
             }
         }
         .navigationTitle(repository.name).navigationBarTitleDisplayMode(.inline)
@@ -430,10 +431,11 @@ struct ProfileView: View {
             }
             if store.hasToken {
                 Section {
-                    GitHubWebRow("Your profile", icon: "person", color: .blue, path: "/\(store.account)")
-                    GitHubWebRow("Repositories", icon: "repo", color: Color(white: 0.28), path: "/\(store.account)?tab=repositories")
-                    GitHubWebRow("Starred", icon: "star", color: .orange, path: "/\(store.account)?tab=stars")
-                    GitHubWebRow("Organizations", icon: "organization", color: .orange, path: "/settings/organizations")
+                    NavigationLink { AccountProfileView(login: store.account) } label: { WorkLabel("Your profile", icon: "person", color: .blue) }
+                    NavigationLink { AccountRepositoriesView(collection: .owned) } label: { WorkLabel("Repositories", icon: "repo", color: Color(white: 0.28)) }
+                    NavigationLink { AccountRepositoriesView(collection: .owned, showsActions: true) } label: { WorkLabel("Your repository Actions", icon: "workflow", color: .blue) }
+                    NavigationLink { AccountRepositoriesView(collection: .starred) } label: { WorkLabel("Starred", icon: "star", color: .orange) }
+                    NavigationLink { OrganizationListView() } label: { WorkLabel("Organizations", icon: "organization", color: .orange) }
                 }
             }
             Section {

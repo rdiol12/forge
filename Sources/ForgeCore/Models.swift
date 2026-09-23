@@ -121,6 +121,36 @@ struct RepositorySummary: Decodable, Identifiable, Sendable {
     let language: String?
 }
 
+enum RepositoryCollection: Equatable, Sendable {
+    case owned, starred, user(String), stars(String), organization(String)
+
+    var title: String {
+        switch self {
+        case .owned: return "Your repositories"
+        case .starred, .stars: return "Starred repositories"
+        case .user(let login), .organization(let login): return "\(login)'s repositories"
+        }
+    }
+}
+
+struct GitHubAccount: Decodable, Identifiable, Sendable {
+    let id: Int64
+    let login: String
+    let name: String?
+    let bio: String?
+    let description: String?
+    let company: String?
+    let location: String?
+    let publicRepos: Int?
+    let followers: Int?
+    let following: Int?
+    let type: String?
+
+    static func validLogin(_ login: String) -> Bool {
+        login.range(of: #"^[A-Za-z0-9][A-Za-z0-9-]{0,38}$"#, options: .regularExpression) != nil
+    }
+}
+
 struct RepositoryFile: Decodable, Identifiable, Sendable {
     let name: String
     let path: String

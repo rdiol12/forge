@@ -75,6 +75,43 @@ struct GitHubClient: Sendable {
         return user.login
     }
 
+    func profile(login: String? = nil) async throws -> GitHubAccount {
+        if let login {
+            guard GitHubAccount.validLogin(login) else { throw GitHubError("Invalid GitHub account.") }
+            return try await get("/users/\(login)")
+        }
+        guard !token.isEmpty else { throw GitHubError("Connect GitHub in Settings to see your profile.") }
+        return try await get("/user")
+    }
+
+    func accountRepositories(_ collection: RepositoryCollection, page: Int) async throws -> [RepositorySummary] {
+        let path: String
+        var query = [URLQueryItem(name: "sort", value: "updated"), URLQueryItem(name: "direction", value: "desc")]
+        switch collection {
+        case .owned, .starred:
+            guard !token.isEmpty else { throw GitHubError("Connect GitHub in Settings to see your repositories.") }
+            path = collection == .owned ? "/user/repos" : "/user/starred"
+            if collection == .owned { query += [URLQueryItem(name: "affiliation", value: "owner"), URLQueryItem(name: "visibility", value: "all")] }
+        case .user(let login), .stars(let login), .organization(let login):
+            guard GitHubAccount.validLogin(login) else { throw GitHubError("Invalid GitHub account.") }
+            switch collection {
+            case .organization: path = "/orgs/\(login)/repos"
+            case .stars: path = "/users/\(login)/starred"
+            default: path = "/users/\(login)/repos"
+            }
+        }
+        return try await get(path, page: page, count: 30, query: query)
+    }
+
+    func organizations(login: String? = nil, page: Int) async throws -> [GitHubAccount] {
+        if let login {
+            guard GitHubAccount.validLogin(login) else { throw GitHubError("Invalid GitHub account.") }
+            return try await get("/users/\(login)/orgs", page: page, count: 30)
+        }
+        guard !token.isEmpty else { throw GitHubError("Connect GitHub in Settings to see your organizations.") }
+        return try await get("/user/orgs", page: page, count: 30)
+    }
+
     func searchRepositories(_ query: String, page: Int) async throws -> [RepositorySummary] {
         struct Response: Decodable { let items: [RepositorySummary] }
         let response: Response = try await get("/search/repositories", page: page, count: 30,
@@ -86,9 +123,9 @@ struct GitHubClient: Sendable {
         try await get("/notifications", page: page, count: 50, query: [URLQueryItem(name: "all", value: "true")])
     }
 
-    func runs(in repository: Repository) async throws -> [WorkflowRun] {
+    func runs(in repository: Repository, page: Int = 1) async throws -> [WorkflowRun] {
         struct Response: Decodable { let workflowRuns: [WorkflowRun] }
-        let response: Response = try await get("/repos/\(repository.fullName)/actions/runs", page: 1, count: 30)
+        let response: Response = try await get("/repos/\(repository.fullName)/actions/runs", page: page, count: 30)
         return response.workflowRuns
     }
 

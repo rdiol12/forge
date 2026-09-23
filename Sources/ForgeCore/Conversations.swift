@@ -11,6 +11,11 @@ enum ConversationKind: String, CaseIterable, Sendable {
 }
 
 enum GitHubRoute: Equatable, Sendable {
+    case profile(String)
+    case repositories(RepositoryCollection)
+    case organizations
+    case actions(Repository)
+    case releases(Repository)
     case repository(Repository)
     case conversations(Repository, ConversationKind)
     case conversation(Repository, Int, ConversationKind)
@@ -19,9 +24,28 @@ enum GitHubRoute: Equatable, Sendable {
         guard url.scheme == "https", url.host == "github.com", url.user == nil, url.password == nil,
               url.port == nil || url.port == 443 else { return nil }
         let parts = url.path.split(separator: "/").map(String.init)
-        guard parts.count >= 2, !["settings", "orgs", "organizations", "login", "account", "apps", "site", "features", "sponsors"].contains(parts[0]),
+        if parts == ["settings", "organizations"] { self = .organizations; return }
+        if parts.count == 3, parts[0] == "orgs", parts[2] == "repositories", GitHubAccount.validLogin(parts[1]) {
+            self = .repositories(.organization(parts[1])); return
+        }
+        let reserved = ["settings", "orgs", "organizations", "login", "logout", "join", "account", "apps", "site", "features", "sponsors", "dashboard", "explore", "marketplace", "notifications", "issues", "pulls", "search", "copilot", "topics", "trending", "collections", "security", "pricing", "about", "contact", "enterprise", "new"]
+        guard let owner = parts.first, !reserved.contains(owner.lowercased()), GitHubAccount.validLogin(owner) else { return nil }
+        if parts.count == 1 {
+            let tabs = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.filter { $0.name == "tab" } ?? []
+            guard tabs.count <= 1 else { return nil }
+            switch tabs.first?.value {
+            case nil, "overview": self = .profile(owner)
+            case "repositories": self = .repositories(.user(owner))
+            case "stars": self = .repositories(.stars(owner))
+            default: return nil
+            }
+            return
+        }
+        guard parts.count >= 2,
               let repo = try? Repository(parts[0] + "/" + parts[1]) else { return nil }
         if parts.count == 2 { self = .repository(repo); return }
+        if parts.count == 3, parts[2] == "actions" { self = .actions(repo); return }
+        if parts.count == 3, parts[2] == "releases" { self = .releases(repo); return }
         let kind: ConversationKind
         switch parts[2] {
         case "issues": kind = .issue

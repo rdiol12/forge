@@ -121,6 +121,8 @@ jobs:
 
           Feedback improvements: Inbox read state syncs with GitHub when opening or swiping a notification. Create branches from a named source branch using a native repository form. Issue and run identifiers display without thousands separators.
 
+          Profile shortcuts now open native account details, your repositories (including accessible private repositories), starred repositories, and organizations. Open Profile > Your repository Actions to browse workflow runs, jobs, and artifacts. Repository Actions and Releases work without adding a favorite, with pagination and refresh.
+
           Browser sign-in is implemented and awaits GitHub OAuth registration and backend activation. Manual token sign-in remains available in Settings.
 
           Commit: $GITHUB_SHA
