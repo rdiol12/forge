@@ -4,24 +4,31 @@ import SwiftUI
 struct HomeView: View {
     @Environment(ForgeStore.self) private var store
     @Environment(DownloadManager.self) private var downloads
+    @State private var tab = 0
     @State private var addingRepository = false
     @State private var showingSettings = false
 
     var body: some View {
-        TabView {
+        TabView(selection: $tab) {
             NavigationStack {
-                ActionsView(addingRepository: $addingRepository)
-                    .toolbar { navigationTools }
+                dashboard
+                    .navigationTitle("Home")
+                    .toolbar {
+                        ToolbarItemGroup(placement: .topBarTrailing) {
+                            Button { addingRepository = true } label: { Image(systemName: "plus") }
+                                .accessibilityLabel("Add favorite repository")
+                            Button { tab = 2 } label: { Image(systemName: "magnifyingglass") }
+                                .accessibilityLabel("Search GitHub")
+                        }
+                    }
             }
-            .tabItem { Label("Actions", systemImage: "waveform.path.ecg") }
-            NavigationStack {
-                ReleasesView(addingRepository: $addingRepository)
-                    .toolbar { navigationTools }
-            }
-            .tabItem { Label("Releases", systemImage: "shippingbox") }
-            NavigationStack { DownloadsView() }
-                .tabItem { Label("Downloads", systemImage: "arrow.down.circle") }
-                .badge(downloads.entries.filter(\.active).count)
+            .tabItem { Label("Home", image: "octicon-home") }.tag(0)
+            NavigationStack { InboxView(showingSettings: $showingSettings) }
+                .tabItem { Label("Inbox", image: "octicon-inbox") }.tag(1)
+            NavigationStack { ExploreView() }
+                .tabItem { Label("Explore", image: "octicon-telescope") }.tag(2)
+            NavigationStack { ProfileView(showingSettings: $showingSettings) }
+                .tabItem { Label("Profile", image: "octicon-person") }.tag(3)
         }
         .sheet(isPresented: $addingRepository) { AddRepositoryView() }
         .sheet(isPresented: $showingSettings, onDismiss: { Task { await store.refresh() } }) { SettingsView() }
@@ -30,28 +37,92 @@ struct HomeView: View {
         } message: { Text(downloads.errorMessage ?? "") }
     }
 
-    @ToolbarContentBuilder private var navigationTools: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
-            Button { showingSettings = true } label: { Image(systemName: "person.crop.circle") }
-                .accessibilityLabel("Account and settings")
+    private var dashboard: some View {
+        List {
+            Section {
+                GitHubWebRow("Issues", icon: "issue-opened", color: .green, path: "/issues")
+                GitHubWebRow("Pull Requests", icon: "git-pull-request", color: .blue, path: "/pulls")
+                GitHubWebRow("Discussions", icon: "comment-discussion", color: .purple, path: "/discussions")
+                NavigationLink { FavoritesView() } label: { WorkLabel("Top Repositories", icon: "repo", color: Color(white: 0.28)) }
+                GitHubWebRow("Organizations", icon: "organization", color: .orange, path: "/settings/organizations")
+            } header: {
+                HStack {
+                    Text("My Work")
+                    Spacer()
+                    Menu {
+                        Button("Account and settings") { showingSettings = true }
+                        Link("Open GitHub dashboard", destination: URL(string: "https://github.com/dashboard")!)
+                    } label: { Image(systemName: "ellipsis").foregroundStyle(.secondary).frame(width: 32, height: 24) }
+                    .accessibilityLabel("My Work options")
+                }
+            }
+
+            Section {
+                if store.repositories.isEmpty {
+                    VStack(spacing: 12) {
+                        Text("Keep your favorite repositories close.").foregroundStyle(.secondary)
+                        Button("Add a favorite") { addingRepository = true }.buttonStyle(.bordered)
+                    }.frame(maxWidth: .infinity).padding(.vertical, 12)
+                }
+                ForEach(store.repositories) { repository in
+                    NavigationLink { RepositoryView(repository: repository) } label: { RepositoryRow(repository: repository) }
+                }
+            } header: {
+                HStack {
+                    Text("Favorites")
+                    Spacer()
+                    Menu {
+                        Button("Add a favorite", systemImage: "plus") { addingRepository = true }
+                        Button("Manage favorites", systemImage: "slider.horizontal.3") { showingSettings = true }
+                    } label: { Image(systemName: "ellipsis").foregroundStyle(.secondary).frame(width: 32, height: 24) }
+                    .accessibilityLabel("Favorite repository options")
+                }
+            }
+
+            Section {
+                NavigationLink { ActionsView() } label: {
+                    HStack {
+                        WorkLabel("Actions", icon: "workflow", color: .blue)
+                        Spacer()
+                        if store.isRefreshing { ProgressView() }
+                        else { Text(store.runs.filter { [.running, .queued].contains($0.run.state) }.count, format: .number).foregroundStyle(.secondary) }
+                    }
+                }
+                NavigationLink { ReleasesView() } label: {
+                    HStack {
+                        WorkLabel("Releases", icon: "tag", color: .green)
+                        Spacer()
+                        Text(store.releases.filter { !store.readReleases.contains($0.id) }.count, format: .number).foregroundStyle(.secondary)
+                    }
+                }
+                NavigationLink { DownloadsView() } label: {
+                    HStack {
+                        WorkLabel("Downloads", icon: "download", color: .purple)
+                        Spacer()
+                        Text(downloads.entries.count, format: .number).foregroundStyle(.secondary)
+                    }
+                }
+                GitHubWebRow("Copilot", icon: "copilot", color: Color(white: 0.28), path: "/copilot")
+            } header: { Text("Shortcuts") }
         }
-        ToolbarItemGroup(placement: .topBarTrailing) {
-            if store.isRefreshing { ProgressView().accessibilityLabel("Refreshing") }
-            Button { addingRepository = true } label: { Image(systemName: "plus") }
-                .accessibilityLabel("Watch a repository")
-        }
+        .listStyle(.insetGrouped)
+        .listSectionSpacing(22)
+        .environment(\.defaultMinListRowHeight, 50)
+        .headerProminence(.increased)
+        .refreshable { await store.refresh() }
     }
 }
 
 @MainActor
-private struct ActionsView: View {
+struct ActionsView: View {
+    var repository: Repository? = nil
     @Environment(ForgeStore.self) private var store
-    @Binding var addingRepository: Bool
     @State private var filter = "All"
     @State private var search = ""
 
     private var visible: [RepositoryRun] {
         store.runs.filter { entry in
+            (repository == nil || entry.repository.id == repository?.id) &&
             (filter == "All" || (filter == "Failed" && entry.run.state == .failed) ||
              (filter == "Active" && [.running, .queued].contains(entry.run.state))) &&
             (search.isEmpty || "\(entry.repository.fullName) \(entry.run.displayTitle) \(entry.run.headBranch ?? "")".localizedCaseInsensitiveContains(search))
@@ -60,67 +131,36 @@ private struct ActionsView: View {
 
     var body: some View {
         List {
+            Picker("Run status", selection: $filter) {
+                ForEach(["All", "Failed", "Active"], id: \.self) { Text($0).tag($0) }
+            }.pickerStyle(.segmented).listRowBackground(Color.clear).listRowInsets(EdgeInsets())
+            if !store.errors.isEmpty { RefreshErrors() }
             Section {
-                VStack(alignment: .leading, spacing: 20) {
-                    Label("FORGE", systemImage: "shippingbox.fill")
-                        .font(.caption.weight(.heavy)).tracking(3).foregroundStyle(.orange)
-                    Text("Your builds.\nWithin reach.")
-                        .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                    Text("Follow the run. Grab the artifact. Keep shipping.")
-                        .font(.subheadline).foregroundStyle(.secondary)
-                    HStack(spacing: 12) {
-                        MetricTile(value: store.repositories.count, title: "Watching", color: .orange)
-                        MetricTile(value: store.runs.filter { [.running, .queued].contains($0.run.state) }.count, title: "Active", color: .blue)
-                        MetricTile(value: store.runs.filter { $0.run.state == .failed }.count, title: "Failed", color: .red)
-                    }
+                ForEach(visible) { entry in
+                    NavigationLink { RunDetailView(entry: entry) } label: { RunRow(entry: entry) }
                 }
-                .padding(.vertical, 8)
-            }
-            .listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 8, trailing: 20))
-
-            if store.repositories.isEmpty {
-                WelcomeCard(addingRepository: $addingRepository)
-            } else {
-                if !store.errors.isEmpty { RefreshErrors() }
-                Section {
-                    Picker("Run status", selection: $filter) {
-                        ForEach(["All", "Failed", "Active"], id: \.self) { Text($0).tag($0) }
-                    }.pickerStyle(.segmented).listRowBackground(Color.clear)
-                    ForEach(visible) { entry in
-                        NavigationLink { RunDetailView(entry: entry) } label: { RunRow(entry: entry) }
-                    }
-                    if visible.isEmpty {
-                        ContentUnavailableView("No matching runs", systemImage: "checkmark.circle", description: Text(store.isRefreshing ? "Checking your repositories…" : "Try another filter or pull to refresh."))
-                    }
-                } header: {
-                    HStack {
-                        Text("Recent activity")
-                        Spacer()
-                        if let date = store.refreshedAt { Text(date, style: .time).textCase(nil) }
-                    }
-                } footer: {
-                    Text("Latest 30 runs per repository. Refreshes when you open Forge; pull down to check again. Failed includes older runs in this window.")
+                if visible.isEmpty {
+                    ContentUnavailableView("No matching runs", systemImage: "play.circle", description: Text(store.isRefreshing ? "Checking your repositories?" : "Add a favorite repository on Home, change the filter, or pull to refresh."))
                 }
-            }
+            } header: { Text(repository?.fullName ?? "Recent activity").textCase(nil) }
+              footer: { Text("Latest 30 runs per favorite repository. Pull to refresh.") }
         }
-        .listStyle(.insetGrouped)
         .navigationTitle("Actions")
-        .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $search, prompt: "Repository, branch or run")
         .refreshable { await store.refresh() }
     }
 }
 
 @MainActor
-private struct ReleasesView: View {
+struct ReleasesView: View {
+    var repository: Repository? = nil
     @Environment(ForgeStore.self) private var store
-    @Binding var addingRepository: Bool
     @State private var unreadOnly = false
     @State private var search = ""
 
     private var visible: [RepositoryRelease] {
         store.releases.filter {
+            (repository == nil || $0.repository.id == repository?.id) &&
             (!unreadOnly || !store.readReleases.contains($0.id)) &&
             (search.isEmpty || "\($0.repository.fullName) \($0.release.title) \($0.release.tagName)".localizedCaseInsensitiveContains(search))
         }
@@ -128,44 +168,37 @@ private struct ReleasesView: View {
 
     var body: some View {
         List {
+            Toggle("Unread only", isOn: $unreadOnly)
+            if !store.errors.isEmpty { RefreshErrors() }
             Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Fresh off the build.").font(.system(.title, design: .rounded, weight: .bold))
-                    Text("Release notes, real download counts, and every file in one place.").foregroundStyle(.secondary)
-                }.padding(.vertical, 8)
-            }.listRowBackground(Color.clear)
-            if store.repositories.isEmpty {
-                WelcomeCard(addingRepository: $addingRepository)
-            } else {
-                if !store.errors.isEmpty { RefreshErrors() }
-                Toggle("Unread only", isOn: $unreadOnly)
-                Section {
-                    ForEach(visible) { entry in
-                        NavigationLink { ReleaseDetailView(entry: entry) } label: {
-                            VStack(alignment: .leading, spacing: 9) {
+                ForEach(visible) { entry in
+                    NavigationLink { ReleaseDetailView(entry: entry) } label: {
+                        HStack(alignment: .top, spacing: 12) {
+                            Octicon("tag").foregroundStyle(.green).padding(.top, 3)
+                            VStack(alignment: .leading, spacing: 6) {
                                 HStack {
-                                    Text(entry.repository.fullName).font(.caption.monospaced()).foregroundStyle(.secondary)
+                                    Text(entry.repository.fullName).font(.caption).foregroundStyle(.secondary)
                                     Spacer()
                                     if !store.readReleases.contains(entry.id) {
-                                        Image(systemName: "circle.fill").font(.system(size: 7)).foregroundStyle(.orange).accessibilityLabel("Unread")
+                                        Circle().fill(.blue).frame(width: 7, height: 7).accessibilityLabel("Unread")
                                     }
                                 }
-                                Text(entry.release.title).font(.headline).foregroundStyle(.primary)
+                                Text(entry.release.title).font(.body.weight(.semibold)).foregroundStyle(.primary)
                                 HStack {
-                                    Label(entry.release.tagName, systemImage: "tag")
+                                    Text(entry.release.tagName)
                                     if entry.release.prerelease { Text("Pre-release").foregroundStyle(.orange) }
                                     Spacer()
                                     if let date = entry.release.publishedAt { Text(date, style: .relative) }
                                 }.font(.caption).foregroundStyle(.secondary)
-                            }.padding(.vertical, 8)
-                        }
+                            }
+                        }.padding(.vertical, 6)
                     }
-                    if visible.isEmpty {
-                        ContentUnavailableView("You're caught up", systemImage: "shippingbox", description: Text("No releases match this view."))
-                    }
-                } header: { Text("Release inbox") }
-                  footer: { Text("Latest 20 releases per repository. Open a release to mark it as read.") }
-            }
+                }
+                if visible.isEmpty {
+                    ContentUnavailableView("No matching releases", systemImage: "tag", description: Text("Add a favorite repository on Home or change the filter."))
+                }
+            } header: { Text(repository?.fullName ?? "Latest releases").textCase(nil) }
+              footer: { Text("Latest 20 releases per favorite repository. Open a release to see file download counts.") }
         }
         .navigationTitle("Releases")
         .searchable(text: $search, prompt: "Repository or version")
@@ -173,56 +206,23 @@ private struct ReleasesView: View {
     }
 }
 
-private struct MetricTile: View {
-    let value: Int
-    let title: String
-    let color: Color
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(value, format: .number).font(.system(.title, design: .rounded, weight: .bold)).foregroundStyle(color)
-            Text(title).font(.caption).foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
-        .accessibilityElement(children: .combine)
-    }
-}
-
 private struct RunRow: View {
     let entry: RepositoryRun
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Text(entry.repository.fullName).font(.caption.monospaced()).foregroundStyle(.secondary)
-            Text(entry.run.displayTitle).font(.headline).lineLimit(3)
-            HStack(spacing: 8) {
-                StatusBadge(state: entry.run.state)
-                Text(entry.run.name ?? "Workflow").font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                Spacer(minLength: 0)
-                Text("#\(entry.run.runNumber)").font(.caption.monospaced()).foregroundStyle(.tertiary)
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: entry.run.state.symbol).foregroundStyle(entry.run.state.color)
+                .frame(width: 24).padding(.top, 3).accessibilityLabel(entry.run.state.rawValue)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(entry.repository.fullName).font(.caption).foregroundStyle(.secondary)
+                Text(entry.run.displayTitle).font(.body.weight(.semibold)).lineLimit(3)
+                Text("\(entry.run.name ?? "Workflow") #\(entry.run.runNumber)").font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Label(entry.run.headBranch ?? "Unknown branch", systemImage: "arrow.triangle.branch").lineLimit(1)
+                    Spacer()
+                    Text(entry.run.createdAt, style: .relative)
+                }.font(.caption).foregroundStyle(.secondary)
             }
-            HStack {
-                Label(entry.run.headBranch ?? "Unknown branch", systemImage: "arrow.triangle.branch").lineLimit(1)
-                Spacer()
-                Text(entry.run.createdAt, style: .relative)
-            }.font(.caption).foregroundStyle(.secondary)
-        }.padding(.vertical, 8)
-    }
-}
-
-private struct WelcomeCard: View {
-    @Binding var addingRepository: Bool
-    var body: some View {
-        Section {
-            VStack(alignment: .leading, spacing: 16) {
-                Image(systemName: "antenna.radiowaves.left.and.right").font(.largeTitle).foregroundStyle(.orange)
-                Text("A home for your builds.").font(.title2.bold())
-                Text("Watch a repository to follow Actions, explore releases, and download the files you need.").foregroundStyle(.secondary)
-                Button { addingRepository = true } label: { Label("Watch a repository", systemImage: "plus").frame(maxWidth: .infinity) }
-                    .buttonStyle(.borderedProminent).controlSize(.large)
-                Text("Public repositories work without an account.").font(.caption).foregroundStyle(.secondary)
-            }.padding(.vertical, 12)
-        }
+        }.padding(.vertical, 6)
     }
 }
 

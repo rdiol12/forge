@@ -112,3 +112,40 @@ struct RepositoryRelease: Identifiable, Sendable {
     let release: Release
     var id: String { "\(repository.id)/\(release.id)" }
 }
+
+struct RepositorySummary: Decodable, Identifiable, Sendable {
+    let id: Int64
+    let fullName: String
+    let description: String?
+    let stargazersCount: Int
+    let language: String?
+}
+
+struct GitHubNotification: Decodable, Identifiable, Sendable {
+    struct Subject: Decodable, Sendable {
+        let title: String
+        let type: String
+        let url: URL?
+    }
+    struct NotificationRepository: Decodable, Sendable { let fullName: String }
+    let id: String
+    let unread: Bool
+    let updatedAt: Date
+    let subject: Subject
+    let repository: NotificationRepository
+
+    var webURL: URL? {
+        guard let repo = try? Repository(repository.fullName) else { return nil }
+        let base = "https://github.com/\(repo.fullName)"
+        guard let url = subject.url, url.scheme == "https", url.host == "api.github.com",
+              url.path.hasPrefix("/repos/\(repo.fullName)/") else { return URL(string: base) }
+        let parts = url.path.split(separator: "/")
+        guard parts.count == 5, let number = Int64(parts[4]), number > 0 else { return URL(string: base) }
+        switch parts[3] {
+        case "pulls": return URL(string: "\(base)/pull/\(number)")
+        case "issues": return URL(string: "\(base)/issues/\(number)")
+        case "discussions": return URL(string: "\(base)/discussions/\(number)")
+        default: return URL(string: base)
+        }
+    }
+}

@@ -56,8 +56,8 @@ struct GitHubClient: Sendable {
         return request
     }
 
-    func get<T: Decodable>(_ path: String, page: Int? = nil, count: Int = 100) async throws -> T {
-        let query = page.map { [URLQueryItem(name: "per_page", value: String(count)), URLQueryItem(name: "page", value: String($0))] } ?? []
+    func get<T: Decodable>(_ path: String, page: Int? = nil, count: Int = 100, query: [URLQueryItem] = []) async throws -> T {
+        let query = query + (page.map { [URLQueryItem(name: "per_page", value: String(count)), URLQueryItem(name: "page", value: String($0))] } ?? [])
         let (data, response) = try await session.data(for: request(path, query: query))
         try Self.validate(response)
         return try Self.decoder().decode(T.self, from: data)
@@ -73,6 +73,17 @@ struct GitHubClient: Sendable {
         struct User: Decodable { let login: String }
         let user: User = try await get("/user")
         return user.login
+    }
+
+    func searchRepositories(_ query: String, page: Int) async throws -> [RepositorySummary] {
+        struct Response: Decodable { let items: [RepositorySummary] }
+        let response: Response = try await get("/search/repositories", page: page, count: 30,
+                                              query: [URLQueryItem(name: "q", value: query)])
+        return response.items
+    }
+
+    func notifications(page: Int) async throws -> [GitHubNotification] {
+        try await get("/notifications", page: page, count: 50, query: [URLQueryItem(name: "all", value: "true")])
     }
 
     func runs(in repository: Repository) async throws -> [WorkflowRun] {

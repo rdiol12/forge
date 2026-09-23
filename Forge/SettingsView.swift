@@ -19,10 +19,10 @@ struct AddRepositoryView: View {
                   footer: { Text("For example cli/cli. Connect a token in Settings for private repositories and Actions artifact downloads.") }
                 if let error { ErrorNotice(message: error) }
                 Button(action: add) {
-                    HStack { Text("Watch repository"); Spacer(); if busy { ProgressView() } }
+                    HStack { Text("Add favorite"); Spacer(); if busy { ProgressView() } }
                 }.disabled(busy || input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-            .navigationTitle("Watch repository").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Add favorite").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(busy) } }
             .interactiveDismissDisabled(busy)
         }
@@ -81,24 +81,32 @@ struct SettingsView: View {
                 Section("Token access") {
                     LabeledContent("Actions", value: "Read-only")
                     LabeledContent("Contents", value: "Read-only")
-                    Text("Create a fine-grained token for the repositories you want to watch. Actions read access enables artifact downloads; Contents read access enables private release downloads.")
+                    Text("Create a fine-grained token for your favorite repositories. Actions read access enables artifact downloads; Contents read access enables private release downloads.")
                         .font(.footnote).foregroundStyle(.secondary)
+                    Text("Inbox notifications require a classic token with notifications scope (repo scope for private repositories). GitHub does not support fine-grained tokens for this endpoint.").font(.footnote).foregroundStyle(.secondary)
+                    Link("Create a classic token for Inbox", destination: URL(string: "https://github.com/settings/tokens/new")!)
                     Link("Create a token on GitHub", destination: URL(string: "https://github.com/settings/personal-access-tokens/new")!)
                 }
 
-                Section("Watched repositories") {
+                Section("Favorite repositories") {
                     if store.repositories.isEmpty { Text("No repositories yet").foregroundStyle(.secondary) }
                     ForEach(store.repositories) { repository in
                         HStack {
                             Text(repository.fullName).font(.subheadline.monospaced())
                             Spacer()
                             Button(role: .destructive) { store.removeRepository(repository) } label: { Image(systemName: "minus.circle") }
-                                .buttonStyle(.borderless).accessibilityLabel("Stop watching \(repository.fullName)")
+                                .buttonStyle(.borderless).accessibilityLabel("Remove favorite \(repository.fullName)")
                         }
                     }
                 }
 
                 Section("About Forge") {
+                    NavigationLink("Open-source licenses") {
+                        ScrollView {
+                            Text((Bundle.main.url(forResource: "ThirdPartyNotices", withExtension: "md").flatMap { try? String(contentsOf: $0, encoding: .utf8) }) ?? "GitHub Octicons ? MIT License")
+                                .font(.footnote).textSelection(.enabled).padding()
+                        }.navigationTitle("Licenses").navigationBarTitleDisplayMode(.inline)
+                    }
                     Text("An independent GitHub companion for Actions, releases, and the files they produce.")
                     Text("Release asset counts come directly from GitHub. GitHub does not publish download counts for Actions artifacts.")
                         .font(.footnote).foregroundStyle(.secondary)

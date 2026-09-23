@@ -5,6 +5,54 @@ import FoundationNetworking
 #endif
 
 final class ForgeCoreTests: XCTestCase {
+    func testRepositorySearchEncodesQueriesAndDecodesResults() async throws {
+        StubURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.path, "/search/repositories")
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
+            XCTAssertEqual(query?.first(where: { $0.name == "q" })?.value, "swift language:swift & tools")
+            XCTAssertEqual(query?.first(where: { $0.name == "page" })?.value, "2")
+            return (200, """
+            {"items":[{"id":1,"full_name":"owner/repo","description":null,"stargazers_count":42,"language":"Swift"}]}
+            """)
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let result = try await GitHubClient(session: session).searchRepositories("swift language:swift & tools", page: 2)
+        XCTAssertEqual(result.first?.fullName, "owner/repo")
+        XCTAssertEqual(result.first?.stargazersCount, 42)
+        XCTAssertNil(result.first?.description)
+    }
+
+    func testInboxPaginationAndLinksUseValidatedGitHubDestinations() async throws {
+        StubURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.path, "/notifications")
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
+            XCTAssertEqual(query?.first(where: { $0.name == "all" })?.value, "true")
+            XCTAssertEqual(query?.first(where: { $0.name == "per_page" })?.value, "50")
+            return (200, """
+            [{"id":"7","unread":true,"updated_at":"2026-09-23T09:41:00Z",
+            "subject":{"title":"Fix build","type":"PullRequest","url":"https://api.github.com/repos/owner/repo/pulls/42"},
+            "repository":{"full_name":"owner/repo"}}]
+            """)
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let result = try await GitHubClient(token: "test-only", session: session).notifications(page: 2)
+        XCTAssertEqual(result.first?.webURL?.absoluteString, "https://github.com/owner/repo/pull/42")
+        XCTAssertEqual(result.first?.unread, true)
+        let malicious = GitHubNotification(id: "8", unread: false, updatedAt: .now,
+            subject: .init(title: "Untrusted URL", type: "Issue", url: URL(string: "https://evil.example/repos/owner/repo/issues/5")),
+            repository: .init(fullName: "owner/repo"))
+        XCTAssertEqual(malicious.webURL?.absoluteString, "https://github.com/owner/repo")
+        let invalid = GitHubNotification(id: "9", unread: false, updatedAt: .now,
+            subject: malicious.subject, repository: .init(fullName: "../../evil.example"))
+        XCTAssertNil(invalid.webURL)
+    }
+
     func testRepositoryInputCannotEscapeItsAPIPath() throws {
         let repository = try Repository("  Apple/swift  ")
         XCTAssertEqual(repository.fullName, "Apple/swift")

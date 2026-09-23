@@ -9,7 +9,7 @@ struct DownloadsView: View {
         List {
             if downloads.entries.isEmpty {
                 ContentUnavailableView {
-                    Label("Ready when you are", systemImage: "arrow.down.circle")
+                    Label("No downloads yet", systemImage: "arrow.down.circle")
                 } description: {
                     Text("Download a release file or build artifact. Your files will live here, ready to save, share, or use offline.")
                 }
@@ -19,10 +19,10 @@ struct DownloadsView: View {
                         VStack(alignment: .leading, spacing: 12) {
                             HStack(alignment: .top, spacing: 12) {
                                 Image(systemName: entry.relativePath == nil ? "arrow.down.doc" : "doc.zipper")
-                                    .font(.title2).foregroundStyle(.orange).padding(.top, 3)
+                                    .font(.title2).foregroundStyle(.blue).padding(.top, 3)
                                 VStack(alignment: .leading, spacing: 5) {
                                     Text(entry.specification.name).font(.headline).textSelection(.enabled)
-                                    Text(entry.specification.repository).font(.caption.monospaced()).foregroundStyle(.secondary)
+                                    Text(entry.specification.repository).font(.caption).foregroundStyle(.secondary)
                                     Text(fileSize(entry.specification.size)).font(.caption).foregroundStyle(.secondary)
                                 }
                             }

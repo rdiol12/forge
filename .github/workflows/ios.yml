@@ -20,7 +20,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 30
     env:
-      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     defaults:
       run:
         shell: bash
@@ -52,6 +52,17 @@ jobs:
             CODE_SIGN_IDENTITY= \
             CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
             build 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" | xcbeautify
+
+      - name: Check the iPhone simulator layout
+        run: bash Scripts/Screenshots.sh
+
+      - name: Keep light and dark screenshots
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: Forge-screenshots-${{ github.run_number }}-${{ github.run_attempt }}
+          path: dist/screenshots/*.png
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Package and check the unsigned IPA
         run: |
@@ -98,7 +109,7 @@ jobs:
 
           **Unsigned IPA:** sign Forge-unsigned.ipa with your sideloading tool before installing. No Apple certificate or provisioning profile is included.
 
-          Includes Actions monitoring, build artifact downloads, release download counts, and Save to Files.
+          GitHub-style Home, Inbox, Explore, and Profile navigation. Includes Actions monitoring, build artifact downloads, release download counts, and Save to Files.
 
           Commit: $GITHUB_SHA
           Build: $GITHUB_RUN_NUMBER (attempt $GITHUB_RUN_ATTEMPT)
@@ -109,7 +120,7 @@ jobs:
           gh release create "$tag" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Forge $version · build $GITHUB_RUN_NUMBER (unsigned)" \
+            --title "Forge $version ײ²ֲ· build $GITHUB_RUN_NUMBER (unsigned)" \
             --notes-file "$RUNNER_TEMP/release-notes.md" \
             --draft --prerelease="$prerelease"
           gh release upload "$tag" dist/Forge-unsigned.ipa dist/SHA256SUMS --repo "$GITHUB_REPOSITORY"
@@ -125,6 +136,8 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ios-build-log-${{ github.run_number }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/xcodebuild.log
+          path: |
+            ${{ runner.temp }}/xcodebuild.log
+            ${{ runner.temp }}/simulator-build.log
           if-no-files-found: ignore
           retention-days: 7

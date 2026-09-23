@@ -14,8 +14,8 @@ struct ReleaseDetailView: View {
         List {
             Section {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(entry.repository.fullName).font(.caption.monospaced()).foregroundStyle(.secondary)
-                    Text(entry.release.title).font(.system(.title, design: .rounded, weight: .bold)).textSelection(.enabled)
+                    Text(entry.repository.fullName).font(.caption).foregroundStyle(.secondary)
+                    Text(entry.release.title).font(.title2.bold()).textSelection(.enabled)
                     HStack {
                         Label(entry.release.tagName, systemImage: "tag")
                         if entry.release.prerelease { Text("Pre-release").foregroundStyle(.orange) }
@@ -30,7 +30,7 @@ struct ReleaseDetailView: View {
                 if !assets.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(assets.reduce(Int64(0)) { $0 + $1.downloadCount }, format: .number)
-                            .font(.system(.largeTitle, design: .rounded, weight: .bold)).foregroundStyle(.orange)
+                            .font(.title2.bold()).foregroundStyle(.primary)
                         Text(hasMore ? "Downloads across loaded files" : "Total release file downloads")
                             .font(.caption).foregroundStyle(.secondary)
                     }.padding(.vertical, 8).accessibilityElement(children: .combine)

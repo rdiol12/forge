@@ -12,7 +12,7 @@ struct ForgeApp: App {
             HomeView()
                 .environment(store)
                 .environment(downloads)
-                .tint(.orange)
+                .tint(.blue)
                 .task(id: scenePhase) {
                     if scenePhase == .active { await store.refresh() }
                 }

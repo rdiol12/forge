@@ -11,3 +11,5 @@ dist/
 *.ipa
 *.xcarchive/
 .swiftpm/
+
+build-simulator/

@@ -21,12 +21,12 @@ struct RunDetailView: View {
         List {
             Section {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text(entry.repository.fullName).font(.caption.monospaced()).foregroundStyle(.secondary)
+                    Text(entry.repository.fullName).font(.caption).foregroundStyle(.secondary)
                     Text(run.displayTitle).font(.title2.bold()).textSelection(.enabled)
                     StatusBadge(state: run.state)
                     Label(run.headBranch ?? "Unknown branch", systemImage: "arrow.triangle.branch").font(.subheadline)
                     Text("Run #\(run.runNumber) · Attempt \(run.runAttempt) · \(run.headSha.prefix(7))")
-                        .font(.caption.monospaced()).foregroundStyle(.secondary)
+                        .font(.caption).foregroundStyle(.secondary)
                 }.padding(.vertical, 8)
                 Link(destination: run.htmlUrl) { Label("Open run on GitHub", systemImage: "arrow.up.right.square") }
                 if let runError { ErrorNotice(message: runError) }
