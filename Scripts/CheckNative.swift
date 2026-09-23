@@ -6,6 +6,36 @@ struct CheckNative {
         // Optional developer token comes from stdin, never arguments, files, or logs.
         let token = CommandLine.arguments.contains("--authenticated") ? (readLine() ?? "") : ""
         let client = GitHubClient(token: token)
+        if CommandLine.arguments.contains("--workspace") {
+            let repository = try Repository("rdiol12/forge-ios")
+            let settings: RepositorySettings = try await client.get("/repos/\(repository.fullName)")
+            precondition(settings.visibility == "private")
+            let people = try await client.people(login: "octocat", collection: .following, page: 1)
+            precondition(!people.isEmpty)
+            let branches = try await client.branches(in: repository, page: 1)
+            guard let branch = branches.first(where: { $0.name == settings.defaultBranch }) else { throw GitHubError("Default branch not found.") }
+            let files = try await client.files(in: repository, path: "", sha: branch.commit.sha)
+            guard let readme = files.first(where: { $0.name == "README.md" }) else { throw GitHubError("README not found.") }
+            let code = try await client.codeText(in: repository, file: readme)
+            let (raw, response) = try await client.session.data(for: client.downloadRequest(try .repositoryFile(readme, in: repository)))
+            try GitHubClient.validate(response)
+            precondition(String(data: raw, encoding: .utf8) == code)
+            let archive = try DownloadSpec.repositoryArchive(in: repository, sha: branch.commit.sha, name: branch.name)
+            let (zip, zipResponse) = try await client.session.download(for: client.downloadRequest(archive))
+            defer { try? FileManager.default.removeItem(at: zip) }
+            try GitHubClient.validate(zipResponse)
+            let archiveData = try Data(contentsOf: zip)
+            precondition(archiveData.starts(with: [0x50, 0x4b]))
+            let runs = try await client.runs(in: repository, status: "success")
+            precondition(runs.allSatisfy { $0.conclusion == "success" })
+            if let run = runs.first, let job = try await client.jobs(in: repository, run: run, page: 1).first {
+                let log = try await client.jobLog(in: repository, jobID: job.id)
+                precondition(!log.isEmpty)
+            }
+            print("PASS: Native following list, private branch files, identical immutable README download, repository ZIP, successful-build query and native job logs.")
+            print("PASS: Repository remains private; no writes were made.")
+            return
+        }
         if CommandLine.arguments.contains("--account") {
             guard !token.isEmpty else { throw GitHubError("The account check needs --authenticated and a developer token on stdin.") }
             let profile = try await client.profile()

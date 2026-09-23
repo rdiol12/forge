@@ -24,8 +24,8 @@ final class DownloadManager {
     private let foreground = URLSession(configuration: .ephemeral)
     private let directory: URL
     private let manifest: URL
-    private lazy var background: URLSession = {
-        let config = URLSessionConfiguration.background(withIdentifier: Self.sessionID)
+    @ObservationIgnored private lazy var background: URLSession = {
+        let config = URLSessionConfiguration.background(withIdentifier: DownloadManager.sessionID)
         config.isDiscretionary = false
         config.sessionSendsLaunchEvents = true
         config.httpCookieStorage = nil
