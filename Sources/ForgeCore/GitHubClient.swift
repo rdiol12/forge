@@ -141,7 +141,7 @@ struct GitHubClient: Sendable {
         case 401: return GitHubError("GitHub rejected the token. Replace it in Settings; it may have expired.")
         case 403: return GitHubError("GitHub denied access. Check the token's repository permissions and any organization approval requirements.")
         case 404: return GitHubError("Not found, or your token cannot access this repository or file.")
-        case 410: return GitHubError("This artifact has expired and is no longer available to download.")
+        case 410: return GitHubError("This content has expired or was deleted. For an expired artifact, run the workflow again to produce a new one.")
         default: return GitHubError("GitHub returned HTTP \(status). Try again later.")
         }
     }

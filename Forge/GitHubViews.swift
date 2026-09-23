@@ -56,6 +56,65 @@ struct GitHubBrowser: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: SFSafariViewController, context: Context) {}
 }
 
+@MainActor
+struct GitHubDestination: View {
+    let url: URL
+    var body: some View {
+        switch GitHubRoute(url) {
+        case let .repository(repository): RepositoryView(repository: repository)
+        case let .conversations(repository, kind): ConversationListView(kind: kind, repository: repository)
+        case let .conversation(repository, number, kind): ConversationDetailView(repository: repository, number: number, kind: kind)
+        case nil: GitHubBrowser(url: url).ignoresSafeArea()
+        }
+    }
+}
+
+private struct InAppURL: Identifiable {
+    let url: URL
+    var id: String { url.absoluteString }
+}
+
+private struct InAppLinks: ViewModifier {
+    @State private var selected: InAppURL?
+    func body(content: Content) -> some View {
+        content
+            .environment(\.openURL, OpenURLAction { url in
+                guard ["https", "http"].contains(url.scheme), url.host != nil, url.user == nil, url.password == nil else { return .discarded }
+                selected = InAppURL(url: url)
+                return .handled
+            })
+            .sheet(item: $selected) { entry in
+                if GitHubRoute(entry.url) != nil { NativeLinkSheet(url: entry.url) }
+                else { GitHubBrowser(url: entry.url).ignoresSafeArea() }
+            }
+    }
+}
+
+private struct NativeLinkSheet: View {
+    let url: URL
+    @Environment(\.dismiss) private var dismiss
+    @State private var path: [URL] = []
+    @State private var browser: InAppURL?
+    var body: some View {
+        NavigationStack(path: $path) {
+            GitHubDestination(url: url)
+                .navigationDestination(for: URL.self) { GitHubDestination(url: $0) }
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
+        }
+        .environment(\.openURL, OpenURLAction { url in
+            guard ["https", "http"].contains(url.scheme), url.host != nil, url.user == nil, url.password == nil else { return .discarded }
+            if GitHubRoute(url) != nil { path.append(url) }
+            else { browser = InAppURL(url: url) }
+            return .handled
+        })
+        .sheet(item: $browser) { GitHubBrowser(url: $0.url).ignoresSafeArea() }
+    }
+}
+
+extension View {
+    func inAppLinks() -> some View { modifier(InAppLinks()) }
+}
+
 struct GitHubWebRow: View {
     let title: String
     let icon: String
@@ -143,9 +202,9 @@ struct RepositoryView: View {
             }
             Section {
                 NavigationLink { RepositoryFilesView(repository: repository) } label: { WorkLabel("Code", icon: "repo", color: Color(white: 0.28)) }
-                GitHubWebRow("Issues", icon: "issue-opened", color: .green, path: "/\(repository.fullName)/issues")
-                GitHubWebRow("Pull Requests", icon: "git-pull-request", color: .blue, path: "/\(repository.fullName)/pulls")
-                GitHubWebRow("Discussions", icon: "comment-discussion", color: .purple, path: "/\(repository.fullName)/discussions")
+                NavigationLink { ConversationListView(kind: .issue, repository: repository) } label: { WorkLabel("Issues", icon: "issue-opened", color: .green) }
+                NavigationLink { ConversationListView(kind: .pullRequest, repository: repository) } label: { WorkLabel("Pull Requests", icon: "git-pull-request", color: .blue) }
+                NavigationLink { ConversationListView(kind: .discussion, repository: repository) } label: { WorkLabel("Discussions", icon: "comment-discussion", color: .purple) }
             }
             Section {
                 if isFavorite {
@@ -275,7 +334,7 @@ struct InboxView: View {
                 if let error {
                     Section {
                         ErrorNotice(message: error)
-                        Text("GitHub's Inbox API requires a classic token with notifications or repo access. Fine-grained tokens still work for Actions and releases.").font(.footnote).foregroundStyle(.secondary)
+                        Text("GitHub's Inbox API requires OAuth or a classic token with notifications or repo access. Fine-grained tokens still work for Actions and releases.").font(.footnote).foregroundStyle(.secondary)
                         Button("Account settings") { showingSettings = true }
                         Button("Retry") { Task { await load(reset: page == 0) } }
                     }
@@ -299,7 +358,10 @@ struct InboxView: View {
         .task(id: store.account) { await load(reset: true) }
         .refreshable { await load(reset: true) }
         .sheet(item: $selected) { entry in
-            if let url = entry.webURL { GitHubBrowser(url: url).ignoresSafeArea() }
+            if let url = entry.webURL {
+                if GitHubRoute(url) != nil { NativeLinkSheet(url: url) }
+                else { GitHubBrowser(url: url).ignoresSafeArea() }
+            }
         }
     }
 

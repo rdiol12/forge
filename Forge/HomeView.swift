@@ -35,6 +35,7 @@ struct HomeView: View {
                 .tabItem { Label("Profile", image: "octicon-person") }.tag(3)
         }
         .id(store.account)
+        .inAppLinks()
         .sheet(isPresented: $addingRepository) { AddRepositoryView() }
         .sheet(isPresented: $showingSettings, onDismiss: { Task { await store.refresh() } }) { SettingsView() }
         .alert("Download", isPresented: Binding(get: { downloads.errorMessage != nil }, set: { if !$0 { downloads.errorMessage = nil } })) {
@@ -45,9 +46,9 @@ struct HomeView: View {
     private var dashboard: some View {
         List {
             Section {
-                GitHubWebRow("Issues", icon: "issue-opened", color: .green, path: "/issues")
-                GitHubWebRow("Pull Requests", icon: "git-pull-request", color: .blue, path: "/pulls")
-                GitHubWebRow("Discussions", icon: "comment-discussion", color: .purple, path: "/discussions")
+                NavigationLink { ConversationListView(kind: .issue) } label: { WorkLabel("Issues", icon: "issue-opened", color: .green) }
+                NavigationLink { ConversationListView(kind: .pullRequest) } label: { WorkLabel("Pull Requests", icon: "git-pull-request", color: .blue) }
+                NavigationLink { ConversationListView(kind: .discussion) } label: { WorkLabel("Discussions", icon: "comment-discussion", color: .purple) }
                 NavigationLink { FavoritesView() } label: { WorkLabel("Top Repositories", icon: "repo", color: Color(white: 0.28)) }
                 GitHubWebRow("Organizations", icon: "organization", color: .orange, path: "/settings/organizations")
             } header: {

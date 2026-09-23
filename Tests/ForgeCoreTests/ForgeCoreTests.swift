@@ -5,6 +5,192 @@ import FoundationNetworking
 #endif
 
 final class ForgeCoreTests: XCTestCase {
+    func testWatchingUsesGitHubSubscriptionAndDoesNotTreatErrorsAsSuccess() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let client = GitHubClient(token: "test-only", session: session)
+        StubURLProtocol.handler = { request in
+            let body = try! JSONSerialization.jsonObject(with: request.httpBody!) as! [String:Any]
+            XCTAssertTrue((body["query"] as! String).contains("updateSubscription"))
+            let variables = body["variables"] as! [String:String]
+            XCTAssertEqual(variables["id"], "issue-node")
+            XCTAssertEqual(variables["state"], "SUBSCRIBED")
+            return (200, "{\"data\":{\"updateSubscription\":{\"subscribable\":{\"viewerSubscription\":\"SUBSCRIBED\"}}}}")
+        }
+        let state = try await client.setSubscription(id: "issue-node", state: .subscribed)
+        XCTAssertEqual(state, .subscribed)
+        StubURLProtocol.handler = { _ in (200, "{\"data\":null,\"errors\":[{\"message\":\"Access denied\"}]}") }
+        do { _ = try await client.setSubscription(id: "issue-node", state: .unsubscribed); XCTFail() }
+        catch let error as GitHubError { XCTAssertTrue(error.message.contains("Access denied")) }
+    }
+
+    func testIssueCreationAndReviewsSendOnlyExplicitUserContent() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let client = GitHubClient(token: "test-only", session: session)
+        let repo = try Repository("owner/repo")
+        StubURLProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/repos/owner/repo/issues")
+            let body = try! JSONSerialization.jsonObject(with: request.httpBody!) as! [String:Any]
+            XCTAssertEqual(body["title"] as? String, "New issue")
+            XCTAssertEqual(body["body"] as? String, "User-written details")
+            return (201, "{\"number\":8,\"title\":\"New issue\",\"html_url\":\"https://github.com/owner/repo/issues/8\"}")
+        }
+        let issue = try await client.createIssue(in: repo, title: " New issue ", body: "User-written details")
+        XCTAssertEqual(issue.number, 8)
+        StubURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.path, "/repos/owner/repo/pulls/8/reviews")
+            let body = try! JSONSerialization.jsonObject(with: request.httpBody!) as! [String:Any]
+            XCTAssertEqual(body["event"] as? String, "REQUEST_CHANGES")
+            XCTAssertEqual(body["commit_id"] as? String, String(repeating: "a", count: 40))
+            return (200, "{}")
+        }
+        try await client.submitReview(in: repo, number: 8, sha: String(repeating: "a", count: 40), event: .requestChanges, body: "Please fix the test")
+        StubURLProtocol.handler = { _ in XCTFail("Missing review text must fail before sending"); return (200, "{}") }
+        do { try await client.submitReview(in: repo, number: 8, sha: String(repeating: "a", count: 40), event: .requestChanges, body: " "); XCTFail() } catch {}
+    }
+
+    func testMergePinsTheReviewedSHAAndRejectsChangedOrUnmergedResponses() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let client = GitHubClient(token: "test-only", session: session)
+        let repo = try Repository("owner/repo")
+        let sha = String(repeating: "b", count: 40)
+        StubURLProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "PUT")
+            XCTAssertEqual(request.url?.path, "/repos/owner/repo/pulls/4/merge")
+            let body = try! JSONSerialization.jsonObject(with: request.httpBody!) as! [String:String]
+            XCTAssertEqual(body["sha"], sha)
+            XCTAssertEqual(body["merge_method"], "squash")
+            return (409, "{\"message\":\"Head changed\"}")
+        }
+        do { try await client.mergePullRequest(in: repo, number: 4, sha: sha, method: .squash); XCTFail() }
+        catch let error as GitHubError { XCTAssertTrue(error.message.contains("changed")) }
+        StubURLProtocol.handler = { _ in (200, "{\"merged\":false,\"message\":\"Branch protection blocked this merge\"}") }
+        do { try await client.mergePullRequest(in: repo, number: 4, sha: sha, method: .merge); XCTFail() }
+        catch let error as GitHubError { XCTAssertTrue(error.message.contains("blocked")) }
+        StubURLProtocol.handler = { _ in (200, "{\"merged\":true,\"message\":\"Merged\"}") }
+        try await client.mergePullRequest(in: repo, number: 4, sha: sha, method: .rebase)
+        StubURLProtocol.handler = { _ in XCTFail("Writes need an API connection"); return (200, "{}") }
+        do { try await GitHubClient(session: session).mergePullRequest(in: repo, number: 4, sha: sha, method: .merge); XCTFail() } catch {}
+    }
+
+    func testResolveReviewThreadUsesItsNodeIDAndReturnedPermissions() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        StubURLProtocol.handler = { request in
+            let body = try! JSONSerialization.jsonObject(with: request.httpBody!) as! [String:Any]
+            XCTAssertTrue((body["query"] as! String).contains("resolveReviewThread"))
+            XCTAssertEqual((body["variables"] as! [String:String])["id"], "thread-id")
+            return (200, "{\"data\":{\"result\":{\"thread\":{\"isResolved\":true,\"viewerCanResolve\":false,\"viewerCanUnresolve\":true}}}}")
+        }
+        let result = try await GitHubClient(token: "test-only", session: session).setReviewThreadResolved(id: "thread-id", resolved: true)
+        XCTAssertTrue(result.isResolved)
+        XCTAssertTrue(result.viewerCanUnresolve)
+    }
+
+    func testNativeRoutesValidateHostsAndKeepConversationDestinations() throws {
+        let repo = try Repository("owner/repo")
+        XCTAssertEqual(GitHubRoute(URL(string: "https://github.com/owner/repo/pull/42/files")!), .conversation(repo, 42, .pullRequest))
+        XCTAssertEqual(GitHubRoute(URL(string: "https://github.com/owner/repo/discussions/7#discussioncomment-1")!), .conversation(repo, 7, .discussion))
+        XCTAssertEqual(GitHubRoute(URL(string: "https://github.com/owner/repo")!), .repository(repo))
+        for url in ["https://github.com.evil.example/owner/repo", "https://user@github.com/owner/repo", "https://github.com:444/owner/repo", "http://github.com/owner/repo", "https://github.com/owner/repo/issues/nope", "https://github.com/settings/organizations"] {
+            XCTAssertNil(GitHubRoute(URL(string: url)!))
+        }
+    }
+
+    func testSignInDistinguishesMissingSetupFromTemporaryOutages() throws {
+        let setup = Data("{\"error\":\"GitHub sign-in is not configured yet.\"}".utf8)
+        XCTAssertThrowsError(try OAuthAttempt.clientID(from: setup, status: 503)) {
+            XCTAssertTrue($0.localizedDescription.contains("hasn't been enabled"))
+        }
+        XCTAssertThrowsError(try OAuthAttempt.clientID(from: Data("unavailable".utf8), status: 503)) {
+            XCTAssertTrue($0.localizedDescription.contains("temporarily"))
+        }
+        XCTAssertEqual(try OAuthAttempt.clientID(from: Data("{\"clientId\":\"client-123\"}".utf8), status: 200), "client-123")
+        XCTAssertThrowsError(try OAuthAttempt.clientID(from: Data("{\"clientId\":\"\"}".utf8), status: 200))
+    }
+
+    func testCodeReaderUsesImmutableBlobAndRejectsBinaryAndLargeFiles() async throws {
+        let sha = String(repeating: "a", count: 40)
+        let file = RepositoryFile(name: "main.swift", path: "src/main.swift", sha: sha, type: "file", size: 3)
+        StubURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.path, "/repos/owner/repo/git/blobs/\(sha)")
+            return (200, "{\"encoding\":\"base64\",\"size\":3,\"content\":\"aGkK\"}")
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let client = GitHubClient(session: session)
+        let text = try await client.codeText(in: Repository("owner/repo"), file: file)
+        XCTAssertEqual(text, "hi\n")
+        StubURLProtocol.handler = { _ in (200, "{\"encoding\":\"base64\",\"size\":3,\"content\":\"YQBi\"}") }
+        do { _ = try await client.codeText(in: Repository("owner/repo"), file: file); XCTFail("Binary files must not become code") } catch {}
+        StubURLProtocol.handler = { _ in XCTFail("Oversized previews must not be fetched"); return (200, "{}") }
+        let large = RepositoryFile(name: "large", path: "large", sha: sha, type: "file", size: 2_000_000)
+        do { _ = try await client.codeText(in: Repository("owner/repo"), file: large); XCTFail("Large preview must fail") } catch {}
+    }
+
+    func testNativeIssueSearchPagesWithoutMixingPullRequests() async throws {
+        StubURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.path, "/search/issues")
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!
+            XCTAssertEqual(query.first { $0.name == "page" }?.value, "2")
+            XCTAssertTrue(query.first { $0.name == "q" }!.value!.contains("is:issue repo:owner/repo is:open crash"))
+            return (200, """
+            {"items":[{"number":7,"title":"Crash","body":"details","html_url":"https://github.com/owner/repo/issues/7","user":null,"state":"open"}]}
+            """)
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let page = try await GitHubClient(session: session).conversations(kind: .issue, repository: Repository("owner/repo"), account: "", search: "crash", state: "open", page: 2, cursor: nil)
+        XCTAssertEqual(page.items.first?.number, 7)
+        XCTAssertNil(page.items.first?.user)
+        XCTAssertFalse(page.more)
+    }
+
+    func testDiscussionGraphQLUsesVariablesPaginationAndFailsOnPartialErrors() async throws {
+        StubURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.path, "/graphql")
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer test-only")
+            // URLProtocol can move HTTP bodies into a stream; inspect the request builder separately below.
+            return (200, """
+            {"data":{"search":{"nodes":[{"number":3,"title":"Ideas","body":"text","htmlUrl":"https://github.com/orgs/owner/discussions/3","repositoryInfo":{"nameWithOwner":"owner/repo"},"user":{"login":"octocat"}}],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}
+            """)
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let client = GitHubClient(token: "test-only", session: session)
+        let request = try client.graphQLRequest("query Test($q: String!) { search(query: $q, type: DISCUSSION, first: 1) { discussionCount } }", variables: ["q":"quote\" & text"])
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String:Any])
+        XCTAssertEqual((body["variables"] as? [String:String])?["q"], "quote\" & text")
+        let page = try await client.conversations(kind: .discussion, repository: Repository("owner/repo"), account: "", search: "", state: "all", page: 1, cursor: "previous")
+        XCTAssertEqual(page.items.first?.title, "Ideas")
+        XCTAssertEqual(page.items.first?.repository, try Repository("owner/repo"))
+        XCTAssertEqual(page.cursor, "next")
+        XCTAssertTrue(page.more)
+        StubURLProtocol.handler = { _ in (200, "{\"data\":{\"search\":null},\"errors\":[{\"message\":\"Access denied\"}]}") }
+        do {
+            _ = try await client.conversations(kind: .discussion, repository: Repository("owner/repo"), account: "", search: "", state: "all", page: 1, cursor: nil)
+            XCTFail("GraphQL errors must not become an empty successful screen")
+        } catch let error as GitHubError { XCTAssertTrue(error.message.contains("Access denied")) }
+    }
+
     func testOAuthUsesPKCEAndRejectsMismatchedOrAmbiguousCallbacks() throws {
         let login = OAuthAttempt(state: "random-state", verifier: String(repeating: "a", count: 43))
         let authorization = try login.authorizationURL(clientID: "client-123", challenge: "test-challenge")
@@ -218,6 +404,19 @@ private final class StubURLProtocol: URLProtocol {
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
+        var request = request
+        if request.httpBody == nil, let stream = request.httpBodyStream {
+            stream.open()
+            defer { stream.close() }
+            var data = Data()
+            var buffer = [UInt8](repeating: 0, count: 1024)
+            while stream.hasBytesAvailable {
+                let count = stream.read(&buffer, maxLength: buffer.count)
+                if count <= 0 { break }
+                data.append(contentsOf: buffer.prefix(count))
+            }
+            request.httpBody = data
+        }
         let (status, body) = Self.handler(request)
         let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)

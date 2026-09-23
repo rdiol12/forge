@@ -11,16 +11,12 @@ final class GitHubSignIn: NSObject, ASWebAuthenticationPresentationContextProvid
     private let network = URLSession(configuration: .ephemeral, delegate: LoginRedirectPolicy(), delegateQueue: nil)
 
     func signIn() async throws -> String {
-        struct Configuration: Decodable { let clientId: String }
         struct Token: Decodable { let accessToken: String; let tokenType: String }
         let (configurationData, configurationResponse) = try await network.data(from: backend.appendingPathComponent("oauth/config"))
-        guard (configurationResponse as? HTTPURLResponse)?.statusCode == 200 else {
-            throw GitHubError("GitHub sign-in is temporarily unavailable. Try again later or use a token in Advanced settings.")
-        }
-        let configuration = try JSONDecoder().decode(Configuration.self, from: configurationData)
+        let clientID = try OAuthAttempt.clientID(from: configurationData, status: (configurationResponse as? HTTPURLResponse)?.statusCode ?? 0)
         let attempt = OAuthAttempt(state: try Self.randomValue(), verifier: try Self.randomValue())
         let challenge = Self.base64URL(Data(SHA256.hash(data: Data(attempt.verifier.utf8))))
-        let authorizationURL = try attempt.authorizationURL(clientID: configuration.clientId, challenge: challenge)
+        let authorizationURL = try attempt.authorizationURL(clientID: clientID, challenge: challenge)
         let callback = try await authorize(authorizationURL)
         let code = try attempt.authorizationCode(from: callback)
         try Task.checkCancellation()

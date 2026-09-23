@@ -112,7 +112,9 @@ jobs:
 
           **Unsigned IPA:** sign Forge-unsigned.ipa with your sideloading tool before installing. No Apple certificate or provisioning profile is included.
 
-          GitHub-style navigation, repository file downloads and previews, optional Copilot, Actions monitoring, build artifact downloads, release download counts, and Save to Files.
+          Native Issues, Discussions, pull requests, reviews, diffs, and code reading. Create issues, watch conversations, approve or request changes, resolve review threads, and merge using the repository's allowed methods. Writes require appropriate GitHub permissions; merges confirm the displayed commit and respect repository rules. No push alerts or merge-conflict editor yet.
+
+          GitHub links open native Forge destinations when supported; remaining web pages stay in the in-app browser. Actions monitoring, test jobs and steps, artifact downloads, release download counts, and Save to Files remain available.
 
           Browser sign-in is implemented and awaits GitHub OAuth registration and backend activation. Manual token sign-in remains available in Settings.
 

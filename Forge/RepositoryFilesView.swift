@@ -73,21 +73,58 @@ struct RepositoryFilesView: View {
 private struct RepositoryFileView: View {
     let repository: Repository
     let file: RepositoryFile
+    @Environment(ForgeStore.self) private var store
+    @State private var code: String?
+    @State private var busy = false
+    @State private var error: String?
     var body: some View {
-        List {
-            Section {
-                Label(file.name, systemImage: "doc").font(.headline)
-                Text(file.path).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                LabeledContent("Size", value: fileSize(file.size))
+        VStack(spacing: 0) {
+            HStack {
+                Text(file.path).lineLimit(2)
+                Spacer()
+                Text(fileSize(file.size))
+            }.font(.caption).foregroundStyle(.secondary).padding()
+            Divider()
+            if busy { Spacer(); ProgressView("Loading code..."); Spacer() }
+            else if let code { CodeTextView(text: code) }
+            else if let error {
+                ContentUnavailableView {
+                    Label("Preview unavailable", systemImage: "doc")
+                } description: { Text(error) }
+                  actions: { Button("Retry") { Task { await load() } } }
+            }
+            HStack {
                 if let specification = try? DownloadSpec.repositoryFile(file, in: repository) {
                     DownloadControl(specification: specification)
-                    Text("Download to preview, save to Files, or share.").font(.footnote).foregroundStyle(.secondary)
-                } else {
-                    Text("This entry is a link or submodule. Open it on GitHub.").foregroundStyle(.secondary)
                 }
-            }
-            Link("Open repository on GitHub", destination: URL(string: "https://github.com/\(repository.fullName)")!)
+                Spacer()
+                if let code { ShareLink(item: code) { Label("Share text", systemImage: "square.and.arrow.up") } }
+            }.padding().background(.bar)
         }
         .navigationTitle(file.name).navigationBarTitleDisplayMode(.inline)
+        .task { await load() }
+    }
+
+    private func load() async {
+        guard !busy else { return }; busy = true; error = nil
+        defer { busy = false }
+        do {
+            let text = try await store.client.codeText(in: repository, file: file)
+            guard !Task.isCancelled else { return }
+            code = text
+        } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
+    }
+}
+
+struct CodeTextView: View {
+    let text: String
+    var body: some View {
+        ScrollView([.horizontal, .vertical]) {
+            HStack(alignment: .top, spacing: 16) {
+                Text((1...max(1, text.components(separatedBy: "\n").count)).map(String.init).joined(separator: "\n"))
+                    .foregroundStyle(.tertiary).multilineTextAlignment(.trailing).accessibilityHidden(true)
+                Text(text.isEmpty ? "(Empty file)" : text).textSelection(.enabled)
+            }.font(.system(.footnote, design: .monospaced)).fixedSize().padding()
+        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }

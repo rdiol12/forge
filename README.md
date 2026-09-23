@@ -5,14 +5,17 @@ A native SwiftUI GitHub companion focused on **Actions, releases, and downloadin
 ## Implemented
 
 - Browser sign-in with GitHub using Apple AuthenticationServices, PKCE, state validation, and Keychain. Activation requires the OAuth registration described in Backend/README.md.
-- Browse repository folders and download individual files, with native Quick Look previews and Save to Files.
+- Read repository code directly in a native, selectable, line-numbered reader. Download files separately for Quick Look previews, sharing, and Save to Files.
+- Browse native Issues, Discussions, and pull requests with search, pagination, descriptions, comments, Discussion replies/accepted answers, pull-request reviews, review comments, and changed-file diffs. Inbox conversation links open these screens.
+- Create issues, watch/unwatch conversations on GitHub, submit PR reviews (comment, approve, request changes), and resolve/unresolve review conversations when permitted.
+- Merge pull requests with the repository's allowed merge, squash, or rebase methods. A confirmation identifies the repository, branches, and current commit; GitHub rejects a changed head or unmet repository rules.
 - Hide the Copilot shortcut in Settings; Profile always stays in the tab bar.
 - GitHub-style Home, Inbox, Explore, and Profile tabs with native iOS navigation, grouped lists, repository avatars, blue accents, and GitHub's MIT-licensed Octicons.
 - Favorite public or token-accessible private repositories; old watched repositories automatically appear in Favorites.
 - Open Actions, Releases, and Downloads from Home shortcuts and individual favorite repositories.
 - Search real GitHub repositories, page through results, and add them to Favorites.
 - Browse real GitHub Inbox notifications with All/Unread filters and pagination (OAuth or a classic token required).
-- Issues, pull requests, discussions, organizations, full profiles, and Copilot open GitHub in the native Safari sheet. The browser uses its own GitHub sign-in session.
+- GitHub issue, pull-request, Discussion, and repository links resolve to native Forge screens. Remaining web destinations (including full profiles, organizations, Copilot, token creation, and full Actions logs) open in the in-app Safari sheet. Website login remains separate from Forge's API connection; browser cookies are not accessed or reused.
 - See recent Actions runs across repositories, filter failures/active runs, and search by repository, title, or branch.
 - Inspect the current run attempt, jobs, and steps; open full job logs on GitHub.
 - List Actions artifacts, see their size/expiry, and download available artifacts as ZIPs.
@@ -45,7 +48,7 @@ The private [forge-ios repository](https://github.com/rdiol12/forge-ios) builds 
 
 1. Runs the shared Swift tests and OAuth backend tests.
 2. Builds the Release iOS device target with Xcode 26.3 and signing disabled. Native Liquid Glass navigation is available on iOS 26; earlier systems use their native appearance.
-3. Builds and launches an iPhone simulator and saves light/dark Home screenshots as a workflow artifact. The screenshot simulator has four public favorite repositories; installed IPAs still start empty.
+3. Builds and launches an iPhone simulator and saves light/dark Home screenshots plus a native issue screenshot as a workflow artifact. The screenshot simulator has four public favorite repositories; installed IPAs still start empty.
 4. Packages the app as `Payload/Forge.app` inside an IPA and checks its ZIP integrity and SHA-256 checksum.
 5. Uploads the IPA/checksum as an Actions artifact and publishes them as a private GitHub release.
 
@@ -66,6 +69,8 @@ The workspace is Windows; GitHub Actions performs the actual iOS device build on
 ## Connect GitHub
 
 Public release browsing and downloads work without signing in. **Sign in with GitHub** in Settings uses the public login service; activation still requires the OAuth credentials in [Backend/README.md](Backend/README.md). Under Advanced, you can connect a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) limited to the repositories you need, with **Actions: Read-only** and **Contents: Read-only**. GitHub may require organization approval. Enter the token in the app; never commit it to this repository. With manual sign-in, GitHub Inbox requires a [classic token](https://github.com/settings/tokens/new) with `notifications` (or `repo` for private repositories); GitHub does not support fine-grained tokens for the [notifications API](https://docs.github.com/en/rest/activity/notifications).
+
+For collaboration with a fine-grained token, add **Issues: Read and write** for issue creation, **Pull requests: Read and write** for reviews, and **Contents: Read and write** for merging. Your account also needs the corresponding repository permission. GitHub enforces its own branch rules. Watch/unwatch uses GitHub subscriptions; Inbox still requires OAuth or a classic token as noted above.
 
 After sign-in, the token is validated with `/user`, stored using a device-only Keychain accessibility class, and sent only to `api.github.com`. API responses use ephemeral sessions. Redirects allow HTTPS GitHub storage endpoints and strip authorization before changing hosts. Downloaded files are stored locally with iOS file protection and excluded from backup. Disconnecting cancels downloads and clears loaded account data; watched repository names and deliberately downloaded files remain on the device.
 
@@ -97,17 +102,19 @@ Device checks: add/remove a repository; connect/disconnect a token; inspect a fa
 
 Verified on 2026-09-23 with Swift 6.0.3 in the existing Linux container:
 
-- **15 core tests passed**, including token boundaries, binary content negotiation, expired artifacts, safe filenames, OAuth callback validation, raw repository files, repository search, notification destinations, pagination, date decoding, run states, HTTP failures, and repository validation.
+- **24 core tests passed**, including issue/review writes, merge commit checks and rejected merges, review resolution permissions, subscriptions, organization Discussion destinations, native URL routing, immutable code previews, GraphQL error handling and pagination, login setup errors, token boundaries, binary content negotiation, expired artifacts, safe filenames, OAuth callback validation, raw repository files, repository search, notification destinations, pagination, date decoding, run states, HTTP failures, and repository validation.
 - The app/core Swift files passed Swift syntax parsing; the core and live-check executable compiled successfully.
 - The live checks decoded 30 public workflow runs, 22 release assets with counts, 4 jobs, 4 artifacts, and 27 repository entries from `cli/cli`. They downloaded the 1,971-byte `gh_2.101.0_checksums.txt` and the 6,262-byte repository `README.md` through the app's API client.
 - Xcode object IDs, source references, scheme XML, property lists, asset JSON, and the app icon passed structural checks.
 - **Also verified in [build 7](https://github.com/rdiol12/forge-ios/actions/runs/35869621313):** all 15 Swift tests and 2 backend tests on macOS, complete device/simulator builds with Xcode 26.3, and light/dark Home screenshots. The published [0.3.0 IPA](https://github.com/rdiol12/forge-ios/releases/tag/build-7-1) was downloaded again and passed ZIP integrity, SHA-256, version, unsigned-package, callback-scheme, and production OAuth-origin checks. The binary targets iOS devices with iOS 17 as its minimum version.
-- **Not yet verified:** complete browser OAuth sign-in (registration credentials are still missing), device interaction flows, native download progress/cancellation/persistence, Keychain, sharing, and token-authenticated artifact/private-repository downloads.
+- **Not yet verified:** complete browser OAuth sign-in (registration credentials are still missing), device interaction flows, native download progress/cancellation/persistence, Keychain, sharing, and token-authenticated downloads on a physical iPhone. The same core API client has downloaded the private Forge Actions artifact and release IPA successfully from the Linux check.
 
 ## Current limits
 
 - Monitoring: latest 30 runs and 20 releases per watched repository, labeled in the interface. Detail screens page through all assets, artifacts, and jobs on demand.
-- Repository files: default branch only, with up to 1,000 entries per folder from GitHub's Contents API.
+- Repository files: default branch only, with up to 1,000 entries per folder. Native code reading supports UTF-8 text up to 1 MiB; binary/larger files use Download and Quick Look. Code previews use the immutable blob revision from the listing.
+- Native collaboration supports issue creation, issue/PR/Discussion watching, PR reviews, review-thread resolution, and direct merging. Editing issues, inline review composition, posting Discussion replies, merge queues/auto-merge, and editing merge conflicts are not implemented. Markdown images/tables are not fully rendered. GitHub search caps results at 1,000 and pull-request files at 3,000; large/binary diff patches may be omitted.
+- Discussions require an API token because GitHub exposes them through authenticated GraphQL. A browser website session cannot supply this API connection.
 - Refresh on app activation or pull to refresh. No push notifications or background monitoring.
 - Downloads run in the foreground; keep Forge open until they finish. No resumable or background transfers yet.
 - GitHub.com only, one account at a time. Enterprise hosts are not implemented. Standard browser OAuth needs the GitHub app registration and hosted backend configured; manual tokens remain available under Advanced.
@@ -115,6 +122,17 @@ Verified on 2026-09-23 with Swift 6.0.3 in the existing Linux container:
 - Source-code archives, which have no release-asset download count, remain available through the release's GitHub link.
 - This is an initial implementation, not an App Store submission. Before shipping, validate the iOS build/device flows and finish production onboarding and distribution.
 
-GitHub Mobile already includes many collaboration features. The product hypothesis here is quicker access to build outputs and release download statistics, not complete feature parity or a pixel-for-pixel copy of every official screen. The shell follows the current [App Store screenshots](https://apps.apple.com/us/app/github/id1477376905); collaboration detail pages currently open the web interface. Copilot is a Home shortcut rather than a separate floating control. [Official GitHub Mobile](https://github.com/mobile)
+GitHub Mobile already includes many collaboration features. The product hypothesis here is quicker access to build outputs and release download statistics, not complete feature parity or a pixel-for-pixel copy of every official screen. The shell follows the current [App Store screenshots](https://apps.apple.com/us/app/github/id1477376905); Issues, Discussions, pull requests, and code have native screens; full profiles and organizations still use an in-app web view. Copilot is a Home shortcut rather than a separate floating control. [Official GitHub Mobile](https://github.com/mobile)
 
 Public feedback and implementation status: [FEEDBACK.md](FEEDBACK.md).
+
+Native API live check (optionally pass --authenticated and a developer token on stdin; never commit tokens):
+
+```sh
+swiftc -parse-as-library Sources/ForgeCore/*.swift Scripts/CheckNative.swift -o .build/check-native
+.build/check-native
+```
+
+On 2026-09-23 the authenticated live check read cli/cli code, 30 issues, 30 pull requests, 26 changed files, 7 reviews, 11 review comments, and community Discussions with cursor pagination, comments, and replies. iPhone UI verification is performed separately in CI.
+
+The authenticated native check also reads watch state, PR merge settings, review threads, comments, and viewer permissions. Mutations are tested with mocked responses: the check never creates issues, submits reviews, changes subscriptions, or merges a real PR. Add `--forge-build` to verify the private Forge workflow, test steps, artifact download, release IPA, and checksum using the app's API client; files are saved under ignored `dist/api-check-build-<number>/`.

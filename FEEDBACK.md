@@ -10,6 +10,6 @@ Reviewed 2026-09-23. GitHub Mobile feedback is in the community/community Discus
 | [Expose release download counters](https://github.com/orgs/community/discussions/22845) | Read exact per-asset counts and totals from GitHub; refresh on demand. | Shipped. GitHub does not expose Actions artifact download counts. |
 | [Display Actions step summaries](https://github.com/orgs/community/discussions/164812) | Keep the full run link available. | Deferred: the public jobs API supplies steps and logs, not arbitrary step-summary Markdown. No undocumented scraping. |
 
-Additional visual corrections in 0.3: compact Home rows, neutral row labels, clearer section alignment, and separate toolbar items. The iOS 26 shell uses native system chrome and MIT-licensed Octicons. Collaboration detail pages still use the GitHub web interface.
+Additional visual corrections in 0.3: compact Home rows, neutral row labels, clearer section alignment, and separate toolbar items. The iOS 26 shell uses native system chrome and MIT-licensed Octicons. Version 0.4 adds native Issues, Discussions, pull requests, reviews, comments, diffs, and a code reader. Users can create issues, watch conversations, submit reviews, resolve review threads, and merge using permitted methods with a commit check. No push notifications, merge queues, or conflict editor yet. Remaining web destinations open inside Forge. Website sessions are kept separate from the supported OAuth/API connection.
 
 No upstream issues or comments were posted, and no claim is made that these changes fix GitHub's own app or API.

@@ -5,6 +5,18 @@ struct OAuthAttempt: Sendable {
     let state: String
     let verifier: String
 
+    static func clientID(from data: Data, status: Int) throws -> String {
+        struct Configuration: Decodable { let clientId: String }
+        struct Failure: Decodable { let error: String }
+        if status == 503, (try? JSONDecoder().decode(Failure.self, from: data).error) == "GitHub sign-in is not configured yet." {
+            throw GitHubError("GitHub sign-in hasn't been enabled for Forge yet. Connect with a personal access token under Advanced.")
+        }
+        guard status == 200, let configuration = try? JSONDecoder().decode(Configuration.self, from: data), !configuration.clientId.isEmpty else {
+            throw GitHubError("GitHub sign-in is temporarily unavailable. Try again later or use a token in Advanced settings.")
+        }
+        return configuration.clientId
+    }
+
     func authorizationURL(clientID: String, challenge: String) throws -> URL {
         guard !clientID.isEmpty, !state.isEmpty, !challenge.isEmpty else { throw GitHubError("GitHub sign-in is unavailable.") }
         var url = URLComponents(string: "https://github.com/login/oauth/authorize")!

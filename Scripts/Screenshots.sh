@@ -26,3 +26,8 @@ xcrun simctl io "$device" screenshot dist/screenshots/home-light.png
 xcrun simctl ui "$device" appearance dark
 sleep 2
 xcrun simctl io "$device" screenshot dist/screenshots/home-dark.png
+xcrun simctl terminate "$device" app.forge.github
+xcrun simctl ui "$device" appearance light
+xcrun simctl launch "$device" app.forge.github --forge-preview-url https://github.com/cli/cli/issues/14512
+sleep 10
+xcrun simctl io "$device" screenshot dist/screenshots/native-issue.png
