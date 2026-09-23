@@ -11,7 +11,7 @@ A native SwiftUI GitHub companion focused on **Actions, releases, and downloadin
 - Favorite public or token-accessible private repositories; old watched repositories automatically appear in Favorites.
 - Open Actions, Releases, and Downloads from Home shortcuts and individual favorite repositories.
 - Search real GitHub repositories, page through results, and add them to Favorites.
-- Browse real GitHub Inbox notifications with All/Unread filters and pagination (classic token required).
+- Browse real GitHub Inbox notifications with All/Unread filters and pagination (OAuth or a classic token required).
 - Issues, pull requests, discussions, organizations, full profiles, and Copilot open GitHub in the native Safari sheet. The browser uses its own GitHub sign-in session.
 - See recent Actions runs across repositories, filter failures/active runs, and search by repository, title, or branch.
 - Inspect the current run attempt, jobs, and steps; open full job logs on GitHub.
@@ -43,7 +43,7 @@ The private [forge-ios repository](https://github.com/rdiol12/forge-ios) builds 
 
 [Build and publish IPA](https://github.com/rdiol12/forge-ios/actions/workflows/ios.yml) runs on pushes to `main`, version tags (`v*`), and manual **Run workflow** requests. Documentation-only branch pushes are skipped. Each run:
 
-1. Runs the shared Swift tests.
+1. Runs the shared Swift tests and OAuth backend tests.
 2. Builds the Release iOS device target with Xcode 26.3 and signing disabled. Native Liquid Glass navigation is available on iOS 26; earlier systems use their native appearance.
 3. Builds and launches an iPhone simulator and saves light/dark Home screenshots as a workflow artifact. The screenshot simulator has four public favorite repositories; installed IPAs still start empty.
 4. Packages the app as `Payload/Forge.app` inside an IPA and checks its ZIP integrity and SHA-256 checksum.
@@ -65,9 +65,9 @@ The workspace is Windows; GitHub Actions performs the actual iOS device build on
 
 ## Connect GitHub
 
-Public release browsing and downloads work without signing in. In Settings, connect a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) limited to the repositories you need, with **Actions: Read-only** and **Contents: Read-only**. GitHub may require organization approval. Enter the token in the app; never commit it to this repository. GitHub Inbox requires a [classic token](https://github.com/settings/tokens/new) with `notifications` (or `repo` for private repositories); GitHub does not support fine-grained tokens for the [notifications API](https://docs.github.com/en/rest/activity/notifications).
+Public release browsing and downloads work without signing in. **Sign in with GitHub** in Settings uses the public login service; activation still requires the OAuth credentials in [Backend/README.md](Backend/README.md). Under Advanced, you can connect a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) limited to the repositories you need, with **Actions: Read-only** and **Contents: Read-only**. GitHub may require organization approval. Enter the token in the app; never commit it to this repository. With manual sign-in, GitHub Inbox requires a [classic token](https://github.com/settings/tokens/new) with `notifications` (or `repo` for private repositories); GitHub does not support fine-grained tokens for the [notifications API](https://docs.github.com/en/rest/activity/notifications).
 
-The token is validated with `/user`, stored using a device-only Keychain accessibility class, and sent only to `api.github.com`. API responses use ephemeral sessions. Redirects allow HTTPS GitHub storage endpoints and strip authorization before changing hosts. Downloaded files are stored locally with iOS file protection and excluded from backup. Disconnecting cancels downloads and clears loaded account data; watched repository names and deliberately downloaded files remain on the device.
+After sign-in, the token is validated with `/user`, stored using a device-only Keychain accessibility class, and sent only to `api.github.com`. API responses use ephemeral sessions. Redirects allow HTTPS GitHub storage endpoints and strip authorization before changing hosts. Downloaded files are stored locally with iOS file protection and excluded from backup. Disconnecting cancels downloads and clears loaded account data; watched repository names and deliberately downloaded files remain on the device.
 
 ## Check the code
 
@@ -98,15 +98,16 @@ Device checks: add/remove a repository; connect/disconnect a token; inspect a fa
 Verified on 2026-09-23 with Swift 6.0.3 in the existing Linux container:
 
 - **15 core tests passed**, including token boundaries, binary content negotiation, expired artifacts, safe filenames, OAuth callback validation, raw repository files, repository search, notification destinations, pagination, date decoding, run states, HTTP failures, and repository validation.
-- All 15 app/core Swift files passed Swift syntax parsing; the core and live-check executable compiled successfully.
-- The live check decoded 30 public workflow runs, 22 release assets with counts, 4 jobs, and 4 artifacts from `cli/cli`; it downloaded the 1,971-byte `gh_2.101.0_checksums.txt` through the app's API client and redirect policy.
+- The app/core Swift files passed Swift syntax parsing; the core and live-check executable compiled successfully.
+- The live checks decoded 30 public workflow runs, 22 release assets with counts, 4 jobs, 4 artifacts, and 27 repository entries from `cli/cli`. They downloaded the 1,971-byte `gh_2.101.0_checksums.txt` and the 6,262-byte repository `README.md` through the app's API client.
 - Xcode object IDs, source references, scheme XML, property lists, asset JSON, and the app icon passed structural checks.
-- **Also verified in GitHub Actions:** all 11 tests on macOS, the complete Release iOS device build with Xcode 16.4, and IPA packaging/checksum validation. The binary targets iOS devices with iOS 17 as its minimum version.
-- **Not yet verified:** device interaction flows, native download progress/cancellation/persistence, Keychain, sharing, and token-authenticated artifact/private-repository downloads.
+- **Also verified in [build 7](https://github.com/rdiol12/forge-ios/actions/runs/35869621313):** all 15 Swift tests and 2 backend tests on macOS, complete device/simulator builds with Xcode 26.3, and light/dark Home screenshots. The published [0.3.0 IPA](https://github.com/rdiol12/forge-ios/releases/tag/build-7-1) was downloaded again and passed ZIP integrity, SHA-256, version, unsigned-package, callback-scheme, and production OAuth-origin checks. The binary targets iOS devices with iOS 17 as its minimum version.
+- **Not yet verified:** complete browser OAuth sign-in (registration credentials are still missing), device interaction flows, native download progress/cancellation/persistence, Keychain, sharing, and token-authenticated artifact/private-repository downloads.
 
 ## Current limits
 
 - Monitoring: latest 30 runs and 20 releases per watched repository, labeled in the interface. Detail screens page through all assets, artifacts, and jobs on demand.
+- Repository files: default branch only, with up to 1,000 entries per folder from GitHub's Contents API.
 - Refresh on app activation or pull to refresh. No push notifications or background monitoring.
 - Downloads run in the foreground; keep Forge open until they finish. No resumable or background transfers yet.
 - GitHub.com only, one account at a time. Enterprise hosts are not implemented. Standard browser OAuth needs the GitHub app registration and hosted backend configured; manual tokens remain available under Advanced.
