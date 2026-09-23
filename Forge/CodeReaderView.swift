@@ -5,6 +5,8 @@ struct CodeTextView: View {
     let text: String
     var filename = ""
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @State private var codeWidth = 0.0
     @State private var lines: [AttributedString] = []
     @State private var query = ""
     @State private var matches: [Int] = []
@@ -37,6 +39,7 @@ struct CodeTextView: View {
                     }
                 }.font(.subheadline).padding(.horizontal).padding(.vertical, 10)
                 Divider()
+                GeometryReader { geometry in
                 ScrollView(wrap ? .vertical : [.horizontal, .vertical]) {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(lines.indices, id: \.self) { index in
@@ -48,10 +51,12 @@ struct CodeTextView: View {
                                     .textSelection(.enabled).padding(.horizontal, 12)
                                     .fixedSize(horizontal: !wrap, vertical: true)
                             }.font(.system(.footnote, design: .monospaced)).padding(.vertical, 2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                             .background(matches.contains(index) ? Color.yellow.opacity(0.18) : Color.clear)
                             .id(index)
                         }
-                    }.padding(.vertical, 10)
+                    }.frame(width: wrap ? geometry.size.width : max(geometry.size.width, codeWidth + gutter + 37), alignment: .leading)
+                        .padding(.vertical, 10)
                 }.defaultScrollAnchor(.topLeading).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .onChange(of: query) { _, value in
                     let plainLines = text.components(separatedBy: "\n")
@@ -59,14 +64,17 @@ struct CodeTextView: View {
                     matchIndex = 0
                     if let first = matches.first { proxy.scrollTo(first, anchor: .center) }
                 }
+                }
             }
         }.background(Color(uiColor: .systemBackground))
-        .task(id: text + filename + String(describing: scheme)) {
+        .task(id: text + filename + String(describing: scheme) + String(describing: typeSize)) {
             let source = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
             let tokens = await Task.detached(priority: .userInitiated) { CodeSyntax.tokens(in: source, filename: filename) }.value
             guard !Task.isCancelled else { return }
             let result = NSMutableAttributedString(string: source)
             for token in tokens { result.addAttribute(.foregroundColor, value: token.kind.color, range: token.range) }
+            let font = UIFont.monospacedSystemFont(ofSize: UIFont.preferredFont(forTextStyle: .footnote).pointSize, weight: .regular)
+            codeWidth = source.components(separatedBy: "\n").reduce(0) { max($0, ($1 as NSString).size(withAttributes: [.font: font]).width) }.rounded(.up)
             var offset = 0
             lines = source.components(separatedBy: "\n").map { line in
                 let range = NSRange(location: offset, length: (line as NSString).length)
