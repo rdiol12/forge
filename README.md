@@ -1,6 +1,6 @@
 # Forge
 
-A native SwiftUI GitHub companion focused on **Actions, releases, and downloading their files**. Working name: Forge. Requires iOS 17 or later; no third-party iOS runtime dependencies, analytics, or AI service. Standard browser sign-in uses a small OAuth exchange backend.
+A native SwiftUI iOS and Kotlin/Jetpack Compose Android GitHub companion focused on **Actions, releases, and downloading their files**. Working name: Forge. Requires iOS 17 or Android 8.0 or later; no third-party iOS runtime dependencies, analytics, or AI service. Standard browser sign-in uses a small OAuth exchange backend.
 
 ## Implemented
 
@@ -107,7 +107,7 @@ Device checks: add/remove a repository; connect/disconnect a token; inspect a fa
 
 Verified on 2026-09-23 with Swift 6.0.3 in the existing Linux container:
 
-- **30 core tests passed**, including native Profile routes, authenticated own-repository pagination, profile/star/organization data, Actions pagination without Favorites, notification read-state writes and branch creation/validation, issue/review writes, merge commit checks and rejected merges, review resolution permissions, subscriptions, organization Discussion destinations, native URL routing, immutable code previews, GraphQL error handling and pagination, login setup errors, token boundaries, binary content negotiation, expired artifacts, safe filenames, OAuth callback validation, raw repository files, repository search, notification destinations, pagination, date decoding, run states, HTTP failures, and repository validation.
+- **45 core tests passed**, including native Profile routes, authenticated own-repository pagination, profile/star/organization data, Actions pagination without Favorites, notification read-state writes and branch creation/validation, issue/review writes, merge commit checks and rejected merges, review resolution permissions, subscriptions, organization Discussion destinations, native URL routing, immutable code previews, GraphQL error handling and pagination, login setup errors, token boundaries, binary content negotiation, expired artifacts, safe filenames, OAuth callback validation, raw repository files, repository search, notification destinations, pagination, date decoding, run states, HTTP failures, and repository validation.
 - The app/core Swift files passed Swift syntax parsing; the core and live-check executable compiled successfully.
 - The live checks decoded 30 public workflow runs, 22 release assets with counts, 4 jobs, 4 artifacts, and 27 repository entries from `cli/cli`. They downloaded the 1,971-byte `gh_2.101.0_checksums.txt` and the 6,262-byte repository `README.md` through the app's API client.
 - Xcode object IDs, source references, scheme XML, property lists, asset JSON, and the app icon passed structural checks.
@@ -117,7 +117,7 @@ Verified on 2026-09-23 with Swift 6.0.3 in the existing Linux container:
 ## Current limits
 
 - Monitoring: latest 30 runs and 20 releases per watched repository, labeled in the interface. Detail screens page through all assets, artifacts, and jobs on demand.
-- Repository files: default branch only, with up to 1,000 entries per folder. Native code reading supports UTF-8 text up to 1 MiB; binary/larger files use Download and Quick Look. Code previews use the immutable blob revision from the listing.
+- Repository files: switch branches with commit-pinned listings, with up to 1,000 entries per folder. Native code reading supports UTF-8 text up to 1 MiB; binary/larger files use Download and Quick Look. Code previews use the immutable blob revision from the listing.
 - Native collaboration supports issue creation, issue/PR/Discussion watching, PR reviews, review-thread resolution, and direct merging. Merge queues/auto-merge and editing merge conflicts are not implemented. Markdown images/tables are not fully rendered. GitHub search caps results at 1,000 and pull-request files at 3,000; large/binary diff patches may be omitted.
 - Discussions require an API token because GitHub exposes them through authenticated GraphQL. A browser website session cannot supply this API connection.
 - Refresh on app activation or pull to refresh. No push notifications or background monitoring.
@@ -151,3 +151,11 @@ Actions write is needed for re-runs/cancellation; Issues write for issue changes
 References: [GitHub Mobile UI](https://github.com/mobile), [workflow jobs/logs](https://docs.github.com/en/rest/actions/workflow-jobs), [PR line comments](https://docs.github.com/en/rest/pulls/comments), [issue edits](https://docs.github.com/en/rest/issues/issues), [file commits](https://docs.github.com/en/rest/repos/contents), [releases](https://docs.github.com/en/rest/releases/releases), [visibility](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/managing-repository-settings/setting-repository-visibility), [background URLSession](https://developer.apple.com/documentation/foundation/downloading-files-in-the-background).
 
 The `--workspace` read-only live check verified native following lists, private branch enumeration, commit-pinned file content/download equality, private repository ZIP download, successful-run filtering and job logs. Write operations use stubs; no repository visibility, file, issue, Discussion, release or workflow was changed for validation.
+
+The 0.7.0 [build 15](https://github.com/rdiol12/forge-ios/actions/runs/35901074837) passed all 45 Swift tests, 2 backend tests, device/simulator builds and screenshot capture. Its 1,521,490-byte unsigned IPA passed SHA-256, ZIP integrity and iPhoneOS version checks and matched the private Actions artifact byte for byte. SHA-256: `99d4228eacaca12d29e665fb2943934fc67313e08c8720af479c35aa890a588a`.
+
+## Android
+
+A native Android app now lives in [Android](Android/README.md), with the same main navigation and GitHub tools. Its separate workflow publishes a signed, installable APK to private GitHub Releases. Android and iOS builds run independently. See the Android README for setup, signing, checks and current limits.
+
+The final iOS layout correction is in [0.7.0 build 16, attempt 2](https://github.com/rdiol12/forge-ios/releases/tag/build-16-2): 45 Swift tests, 2 backend tests, device/simulator builds and screenshots passed. The first attempt stalled booting the hosted simulator; the fresh runner completed. The 1,525,805-byte unsigned device IPA passed ZIP integrity, SHA-256 and version checks: `b685f4305102c6d5ff06ed419f9d64d5531788680bdaf725e430dbd5a1d193ab`. The final code screenshots confirm the corrected line-number gutter.
