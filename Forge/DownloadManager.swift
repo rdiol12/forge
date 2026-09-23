@@ -2,16 +2,6 @@
 import Observation
 import UIKit
 
-struct DownloadEntry: Identifiable, Codable {
-    let id: UUID
-    let specification: DownloadSpec
-    let createdAt: Date
-    var relativePath: String?
-    var progress: Double?
-    var message: String?
-    var active = false
-}
-
 @MainActor @Observable
 final class DownloadManager {
     static let shared = DownloadManager()
@@ -105,7 +95,7 @@ final class DownloadManager {
                         let download = background.downloadTask(with: try DownloadSpec.backgroundRequest(for: url))
                         download.taskDescription = id.uuidString
                         transfers[id] = download
-                        if let index = entries.firstIndex(where: { $0.id == id }) { entries[index].message = nil }
+                        if let index = entries.firstIndex(where: { $0.id == id }) { entries[index].message = nil; entries[index].progress = nil }
                         persist(); download.resume(); return
                     }
                     try GitHubClient.validate(response)
@@ -124,7 +114,7 @@ final class DownloadManager {
     }
 
     fileprivate func finish(_ id: UUID, temporary: URL, response: URLResponse?) {
-        guard let index = entries.firstIndex(where: { $0.id == id && $0.active }) else { return }
+        guard let index = entries.firstIndex(where: { $0.id == id && $0.acceptsCompletion }) else { return }
         let folder = directory.appendingPathComponent(id.uuidString, isDirectory: true)
         do {
             guard let response else { throw GitHubError("Missing download response.") }

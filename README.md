@@ -28,6 +28,8 @@ A native SwiftUI GitHub companion focused on **Actions, releases, and downloadin
 - Track download progress, cancel, retry, and use the native share sheet to **Save to Files**.
 - Keep completed downloads in the app's local library, accessible offline and through Files → On My iPhone → Forge → Downloads.
 
+New in 0.7: native follower/following lists; an owned-repository Actions dashboard; latest successful build downloads; searchable job logs; re-run/cancel controls; background archive downloads with persistent retries; issue/label/assignee editing; Discussion replies; PR line comments; repository visibility settings; README commits; release editing/deletion; branch switching, repository ZIPs, syntax colors, Markdown previews and formatted JSON.
+
 The app starts empty and uses real GitHub data. There are no fabricated metrics or demo downloads. Your repository and organization lists reflect the repositories and memberships your connection can access. Fine-grained tokens may need Starring read permission; organization visibility also depends on the token's organization access.
 
 ## Download counts: the distinction that matters
@@ -116,13 +118,13 @@ Verified on 2026-09-23 with Swift 6.0.3 in the existing Linux container:
 
 - Monitoring: latest 30 runs and 20 releases per watched repository, labeled in the interface. Detail screens page through all assets, artifacts, and jobs on demand.
 - Repository files: default branch only, with up to 1,000 entries per folder. Native code reading supports UTF-8 text up to 1 MiB; binary/larger files use Download and Quick Look. Code previews use the immutable blob revision from the listing.
-- Native collaboration supports issue creation, issue/PR/Discussion watching, PR reviews, review-thread resolution, and direct merging. Editing issues, inline review composition, posting Discussion replies, merge queues/auto-merge, and editing merge conflicts are not implemented. Markdown images/tables are not fully rendered. GitHub search caps results at 1,000 and pull-request files at 3,000; large/binary diff patches may be omitted.
+- Native collaboration supports issue creation, issue/PR/Discussion watching, PR reviews, review-thread resolution, and direct merging. Merge queues/auto-merge and editing merge conflicts are not implemented. Markdown images/tables are not fully rendered. GitHub search caps results at 1,000 and pull-request files at 3,000; large/binary diff patches may be omitted.
 - Discussions require an API token because GitHub exposes them through authenticated GraphQL. A browser website session cannot supply this API connection.
 - Refresh on app activation or pull to refresh. No push notifications or background monitoring.
-- Downloads run in the foreground; keep Forge open until they finish. No resumable or background transfers yet.
+- Release assets, Actions artifacts, repository ZIPs and log archives use iOS background transfers after a safe redirect handshake. iOS controls timing; force-quitting may interrupt transfers. Direct API blob downloads need Forge open. Failed/interrupted entries persist and Try again starts a fresh request; byte-range resume is not implemented.
 - GitHub.com only, one account at a time. Enterprise hosts are not implemented. Standard browser OAuth needs the GitHub app registration and hosted backend configured; manual tokens remain available under Advanced.
-- The first version displays release notes as selectable text and opens full logs on GitHub.
-- Source-code archives, which have no release-asset download count, remain available through the release's GitHub link.
+- Native log previews are limited to 2 MiB; full logs remain downloadable. Syntax colors use a lexical highlighter rather than a compiler. Markdown renders headings, lists, quotes and fenced code; embedded HTML stays text.
+- Repository source ZIPs are available from Code for the selected branch/commit. GitHub does not expose download counts for these archives.
 - This is an initial implementation, not an App Store submission. Before shipping, validate the iOS build/device flows and finish production onboarding and distribution.
 
 GitHub Mobile already includes many collaboration features. The product hypothesis here is quicker access to build outputs and release download statistics, not complete feature parity or a pixel-for-pixel copy of every official screen. The shell follows the current [App Store screenshots](https://apps.apple.com/us/app/github/id1477376905); Issues, Discussions, pull requests, code, profiles, repository lists, and organizations have native screens. Copilot is a Home shortcut rather than a separate floating control. [Official GitHub Mobile](https://github.com/mobile)
@@ -147,3 +149,5 @@ The `--account` live check verified the native profile, 15 owned repositories in
 Actions write is needed for re-runs/cancellation; Issues write for issue changes; Pull requests write for reviews/line comments; Discussions write for replies; Contents write for README commits and release changes; Administration write plus repository admin access for visibility changes. Read-only tokens continue to browse.
 
 References: [GitHub Mobile UI](https://github.com/mobile), [workflow jobs/logs](https://docs.github.com/en/rest/actions/workflow-jobs), [PR line comments](https://docs.github.com/en/rest/pulls/comments), [issue edits](https://docs.github.com/en/rest/issues/issues), [file commits](https://docs.github.com/en/rest/repos/contents), [releases](https://docs.github.com/en/rest/releases/releases), [visibility](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/managing-repository-settings/setting-repository-visibility), [background URLSession](https://developer.apple.com/documentation/foundation/downloading-files-in-the-background).
+
+The `--workspace` read-only live check verified native following lists, private branch enumeration, commit-pinned file content/download equality, private repository ZIP download, successful-run filtering and job logs. Write operations use stubs; no repository visibility, file, issue, Discussion, release or workflow was changed for validation.

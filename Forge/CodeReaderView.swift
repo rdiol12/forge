@@ -46,13 +46,13 @@ struct CodeTextView: View {
                                 Rectangle().fill(Color.secondary.opacity(0.15)).frame(width: 1)
                                 Text(lines[index].characters.isEmpty ? AttributedString(" ") : lines[index])
                                     .textSelection(.enabled).padding(.horizontal, 12)
-                                    .fixedSize(horizontal: !wrap, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+                                    .fixedSize(horizontal: !wrap, vertical: true)
                             }.font(.system(.footnote, design: .monospaced)).padding(.vertical, 2)
                             .background(matches.contains(index) ? Color.yellow.opacity(0.18) : Color.clear)
                             .id(index)
                         }
                     }.padding(.vertical, 10)
-                }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                }.defaultScrollAnchor(.topLeading).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .onChange(of: query) { _, value in
                     let plainLines = text.components(separatedBy: "\n")
                     matches = value.isEmpty ? [] : plainLines.indices.filter { plainLines[$0].localizedCaseInsensitiveContains(value) }
@@ -62,12 +62,13 @@ struct CodeTextView: View {
             }
         }.background(Color(uiColor: .systemBackground))
         .task(id: text + filename + String(describing: scheme)) {
-            let tokens = await Task.detached(priority: .userInitiated) { CodeSyntax.tokens(in: text, filename: filename) }.value
+            let source = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+            let tokens = await Task.detached(priority: .userInitiated) { CodeSyntax.tokens(in: source, filename: filename) }.value
             guard !Task.isCancelled else { return }
-            let result = NSMutableAttributedString(string: text)
+            let result = NSMutableAttributedString(string: source)
             for token in tokens { result.addAttribute(.foregroundColor, value: token.kind.color, range: token.range) }
             var offset = 0
-            lines = text.components(separatedBy: "\n").map { line in
+            lines = source.components(separatedBy: "\n").map { line in
                 let range = NSRange(location: offset, length: (line as NSString).length)
                 offset += range.length + 1
                 return AttributedString(result.attributedSubstring(from: range))
@@ -84,14 +85,19 @@ struct CodeTextView: View {
 
 private extension CodeSyntax.Kind {
     var color: UIColor {
+        let light: UInt32, dark: UInt32
         switch self {
-        case .comment: .secondaryLabel
-        case .string: .systemGreen
-        case .number: .systemOrange
-        case .keyword: .systemPurple
-        case .type: .systemTeal
-        case .function: .systemBlue
-        case .key: .systemIndigo
+        case .comment: (light, dark) = (0x57606A, 0x8B949E)
+        case .string: (light, dark) = (0x0A3069, 0xA5D6FF)
+        case .number: (light, dark) = (0x0550AE, 0x79C0FF)
+        case .keyword: (light, dark) = (0xCF222E, 0xFF7B72)
+        case .type: (light, dark) = (0x953800, 0xFFA657)
+        case .function: (light, dark) = (0x8250DF, 0xD2A8FF)
+        case .key: (light, dark) = (0x0550AE, 0x79C0FF)
+        }
+        return UIColor { traits in
+            let value = traits.userInterfaceStyle == .dark ? dark : light
+            return UIColor(red: CGFloat((value >> 16) & 255) / 255, green: CGFloat((value >> 8) & 255) / 255, blue: CGFloat(value & 255) / 255, alpha: 1)
         }
     }
 }

@@ -3,6 +3,18 @@ import Foundation
 import FoundationNetworking
 #endif
 
+struct DownloadEntry: Identifiable, Codable, Sendable {
+    let id: UUID
+    let specification: DownloadSpec
+    let createdAt: Date
+    var relativePath: String?
+    var progress: Double?
+    var message: String?
+    var active = false
+    // A completed background task can disappear from getAllTasks before its delegate event arrives.
+    var acceptsCompletion: Bool { relativePath == nil && message != "Cancelled" }
+}
+
 struct DownloadSpec: Codable, Identifiable, Sendable {
     let id: String
     let name: String

@@ -5,6 +5,18 @@ import FoundationNetworking
 #endif
 
 final class WorkspaceFeaturesTests: XCTestCase {
+    func testARecoveredDownloadAcceptsLateCompletionButNeverRevivesUserCancellation() throws {
+        let spec = DownloadSpec(id: "asset", name: "app.ipa", repository: "owner/repo", path: "/repos/owner/repo/releases/assets/1", accept: "application/octet-stream", size: 1, requiresAuthentication: false)
+        var entry = DownloadEntry(id: UUID(), specification: spec, createdAt: .now, active: true)
+        entry = try JSONDecoder().decode(DownloadEntry.self, from: JSONEncoder().encode(entry))
+        entry.active = false; entry.message = "Download interrupted. Tap Try again to reconnect."
+        XCTAssertTrue(entry.acceptsCompletion, "The system may deliver completion after getAllTasks excludes a finished transfer")
+        entry.message = "Cancelled"
+        XCTAssertFalse(entry.acceptsCompletion)
+        entry.message = nil; entry.relativePath = "saved"
+        XCTAssertFalse(entry.acceptsCompletion)
+    }
+
     func testMarkdownKeepsFencedCodeOutOfHeadings() {
         let blocks = MarkdownBlock.parse("# Title\n\n- one\n> quote\n```swift\n# not a heading\nlet x = 1\n```\nAfter")
         XCTAssertEqual(blocks.count, 5)
