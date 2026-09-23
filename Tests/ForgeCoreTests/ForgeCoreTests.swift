@@ -5,6 +5,52 @@ import FoundationNetworking
 #endif
 
 final class ForgeCoreTests: XCTestCase {
+    func testNotificationReadSyncRequiresSuccessAndAValidThreadID() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let client = GitHubClient(token: "test-only", session: session)
+        StubURLProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "PATCH")
+            XCTAssertEqual(request.url?.path, "/notifications/threads/123")
+            return (205, "")
+        }
+        try await client.markNotificationRead(id: "123")
+        StubURLProtocol.handler = { _ in (403, "{}") }
+        do { try await client.markNotificationRead(id: "123"); XCTFail("Denied updates must stay unread") } catch {}
+        StubURLProtocol.handler = { _ in XCTFail("Invalid IDs must never reach the API"); return (205, "") }
+        do { try await client.markNotificationRead(id: "../1"); XCTFail() } catch {}
+    }
+
+    func testBranchCreationUsesTheNamedSourceCommitAndNeverOverwritesARef() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let client = GitHubClient(token: "test-only", session: session)
+        let sha = String(repeating: "c", count: 40)
+        StubURLProtocol.handler = { request in
+            if request.httpMethod == "GET" {
+                XCTAssertEqual(request.url?.path, "/repos/owner/repo/git/ref/heads/release/stable")
+                return (200, "{\"ref\":\"refs/heads/release/stable\",\"object\":{\"type\":\"commit\",\"sha\":\"\(sha)\"}}")
+            }
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/repos/owner/repo/git/refs")
+            let body = try! JSONSerialization.jsonObject(with: request.httpBody!) as! [String:String]
+            XCTAssertEqual(body["ref"], "refs/heads/feature/fix")
+            XCTAssertEqual(body["sha"], sha)
+            XCTAssertNil(body["force"])
+            return (201, "{\"ref\":\"refs/heads/feature/fix\",\"object\":{\"type\":\"commit\",\"sha\":\"\(sha)\"}}")
+        }
+        let result = try await client.createBranch(in: Repository("owner/repo"), name: "feature/fix", source: "release/stable")
+        XCTAssertEqual(result.object.sha, sha)
+        StubURLProtocol.handler = { _ in XCTFail("An invalid destination must not be submitted"); return (200, "{}") }
+        for invalid in ["", "../bad", "refs/tags/v1", "feature//bad", "a.lock", "has space"] {
+            do { _ = try await client.createBranch(in: Repository("owner/repo"), name: invalid, source: "main"); XCTFail(invalid) } catch {}
+        }
+    }
+
     func testWatchingUsesGitHubSubscriptionAndDoesNotTreatErrorsAsSuccess() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [StubURLProtocol.self]

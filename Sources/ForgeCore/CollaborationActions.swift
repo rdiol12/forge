@@ -44,6 +44,20 @@ struct ReviewThreadState: Decodable, Sendable {
 struct ReviewThreadPage: Sendable { let items: [ReviewThread]; let more: Bool; let cursor: String? }
 struct ReviewThreadComments: Sendable { let state: ReviewThreadState; let comments: CommentPage }
 
+struct GitReference: Decodable, Sendable {
+    struct Object: Decodable, Sendable { let type: String; let sha: String }
+    let ref: String
+    let object: Object
+
+    static func validBranchName(_ name: String) -> Bool {
+        let forbidden = CharacterSet(charactersIn: "~^:?*[\\")
+        return !name.isEmpty && name != "@" && name != "HEAD" && !name.hasPrefix("-") && !name.hasPrefix("refs/") && !name.hasSuffix(".")
+            && !name.contains("..") && !name.contains("@{")
+            && !name.unicodeScalars.contains { $0.value <= 32 || $0.value == 127 || forbidden.contains($0) }
+            && name.split(separator: "/", omittingEmptySubsequences: false).allSatisfy { !$0.isEmpty && !$0.hasPrefix(".") && !$0.hasSuffix(".lock") }
+    }
+}
+
 extension GitHubClient {
     private func mutationData(_ path: String, method: String = "POST", body: [String: Any]) async throws -> Data {
         guard !token.isEmpty else { throw GitHubError("Connect GitHub in Settings before making changes.") }
@@ -54,7 +68,7 @@ extension GitHubClient {
         let data: Data
         let response: URLResponse
         do { (data, response) = try await session.data(for: request) }
-        catch { throw GitHubError("Couldn't confirm the change: \(error.localizedDescription) Refresh the conversation before submitting again; GitHub may already have saved it.") }
+        catch { throw GitHubError("Couldn't confirm the change: \(error.localizedDescription) Check GitHub before submitting again; the change may already be saved.") }
         if let status = (response as? HTTPURLResponse)?.statusCode, [400, 405, 409, 422].contains(status) {
             struct Failure: Decodable { let message: String }
             let message = (try? Self.decoder().decode(Failure.self, from: data))?.message ?? "GitHub rejected the change."
@@ -69,6 +83,22 @@ extension GitHubClient {
         guard !title.isEmpty else { throw GitHubError("Enter an issue title.") }
         let data = try await mutationData("/repos/\(repository.fullName)/issues", body: ["title": title, "body": body])
         return try Self.decoder().decode(Conversation.self, from: data)
+    }
+
+    func markNotificationRead(id: String) async throws {
+        guard id.range(of: #"^[0-9]+$"#, options: .regularExpression) != nil else { throw GitHubError("Invalid notification thread.") }
+        _ = try await mutationData("/notifications/threads/\(id)", method: "PATCH", body: [:])
+    }
+
+    func createBranch(in repository: Repository, name: String, source: String) async throws -> GitReference {
+        guard !token.isEmpty else { throw GitHubError("Connect GitHub in Settings before creating a branch.") }
+        guard GitReference.validBranchName(name), GitReference.validBranchName(source) else { throw GitHubError("Enter valid branch names, such as main or feature/fix, without a refs/ prefix, spaces, or Git's reserved characters.") }
+        let origin: GitReference = try await get("/repos/\(repository.fullName)/git/ref/heads/\(source)")
+        guard origin.ref == "refs/heads/\(source)", origin.object.type == "commit", origin.object.sha.range(of: #"^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$"#, options: .regularExpression) != nil else { throw GitHubError("GitHub didn't return a valid source branch commit.") }
+        let data = try await mutationData("/repos/\(repository.fullName)/git/refs", body: ["ref": "refs/heads/\(name)", "sha": origin.object.sha])
+        let created = try Self.decoder().decode(GitReference.self, from: data)
+        guard created.ref == "refs/heads/\(name)", created.object.sha == origin.object.sha else { throw GitHubError("GitHub didn't confirm the new branch. Check the repository before trying again.") }
+        return created
     }
 
     private func validatePullRevision(number: Int, sha: String) throws {

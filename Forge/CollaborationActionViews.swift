@@ -1,6 +1,61 @@
 import SwiftUI
 
 @MainActor
+struct CreateBranchView: View {
+    let repository: Repository
+    @Environment(ForgeStore.self) private var store
+    @State private var name = ""
+    @State private var source = ""
+    @State private var created: GitReference?
+    @State private var busy = false
+    @State private var error: String?
+
+    var body: some View {
+        Form {
+            if !store.hasToken { ConnectGitHubNotice() }
+            else if let created {
+                Section {
+                    Label("Branch created", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    Text(created.ref.replacingOccurrences(of: "refs/heads/", with: "")).font(.headline.monospaced()).textSelection(.enabled)
+                    Text("From \(source) at \(created.object.sha.prefix(12))").font(.caption.monospaced()).foregroundStyle(.secondary)
+                    Button("Create another branch") { self.created = nil; name = "" }
+                } header: { Text(repository.fullName).textCase(nil) }
+            } else {
+                Section {
+                    TextField("New branch name", text: $name).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    TextField("Source branch", text: $source).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    if !name.isEmpty && !GitReference.validBranchName(name) { Text("Use a short Git branch name such as feature/fix. Spaces and reserved Git characters aren't allowed.").font(.caption).foregroundStyle(.secondary) }
+                } header: { Text(repository.fullName).textCase(nil) }
+                  footer: { Text("The new branch starts at the source branch's current commit. Creating it may start the repository's workflows. You need Contents write access; existing branches are never overwritten.") }
+                  .disabled(busy)
+                Button("Create branch") { Task { await create() } }.disabled(busy || !GitReference.validBranchName(name) || !GitReference.validBranchName(source))
+                if busy { ProgressView("Contacting GitHub...") }
+                if let error { ErrorNotice(message: error) }
+            }
+        }
+        .navigationTitle("Create branch").navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(busy)
+        .task(id: store.account) {
+            guard store.hasToken, source.isEmpty else { return }
+            busy = true
+            defer { busy = false }
+            do {
+                struct Info: Decodable { let defaultBranch: String }
+                let info: Info = try await store.client.get("/repos/\(repository.fullName)")
+                source = info.defaultBranch
+            } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
+        }
+    }
+
+    private func create() async {
+        guard !busy else { return }; busy = true; error = nil
+        defer { busy = false }
+        do { created = try await store.client.createBranch(in: repository, name: name, source: source) }
+        catch { self.error = error.localizedDescription }
+    }
+}
+
+@MainActor
 struct IssueComposer: View {
     let repository: Repository?
     let onCreated: (Conversation) -> Void
@@ -121,7 +176,7 @@ struct PullRequestActionsView: View {
                         LabeledContent("Status", value: merged ? "Merged" : pull.status)
                         if let head = pull.head, let base = pull.base { Text("\(head.ref) → \(base.ref)").font(.subheadline.monospaced()) }
                         if let sha = pull.head?.sha { LabeledContent("Commit", value: String(sha.prefix(12))).font(.caption.monospaced()) }
-                    } header: { Text("\(repository.fullName) #\(number)").textCase(nil) }
+                    } header: { Text("\(repository.fullName) #\(String(number))").textCase(nil) }
                     Section("Review") {
                         Button("Submit a review") { review = true }.disabled(busy || merged || pull.state != "open" || pull.head?.sha == nil)
                         NavigationLink("Review conversations") { ReviewThreadsView(repository: repository, number: number) }
@@ -154,7 +209,7 @@ struct PullRequestActionsView: View {
         .sheet(isPresented: $review) {
             if let sha = pull?.head?.sha { ReviewComposer(repository: repository, number: number, sha: sha) { reviewed = true } }
         }
-        .confirmationDialog("Merge \(repository.fullName) #\(number)?", isPresented: $confirmMerge, titleVisibility: .visible) {
+        .confirmationDialog("Merge \(repository.fullName) #\(String(number))?", isPresented: $confirmMerge, titleVisibility: .visible) {
             Button(method.title) { Task { await merge() } }
         } message: { Text("\(pull?.head?.ref ?? "") into \(pull?.base?.ref ?? "") at commit \(String((pull?.head?.sha ?? "").prefix(12))). This changes the repository.") }
     }
@@ -196,7 +251,7 @@ private struct ReviewComposer: View {
         NavigationStack {
             Form {
                 Section {
-                    Text("\(repository.fullName) #\(number)").font(.subheadline)
+                    Text("\(repository.fullName) #\(String(number))").font(.subheadline)
                     Text("Reviewing commit \(sha.prefix(12))").font(.caption.monospaced()).foregroundStyle(.secondary)
                     Picker("Review", selection: $event) { ForEach(ReviewEvent.allCases, id: \.self) { Text($0.title).tag($0) } }.disabled(busy)
                     TextEditor(text: $text).frame(minHeight: 180).accessibilityLabel("Review comment").disabled(busy)

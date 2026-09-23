@@ -36,7 +36,7 @@ struct ConversationListView: View {
                                 HStack(alignment: .top, spacing: 12) {
                                     Octicon(kind.icon).foregroundStyle(item.status == "Open" ? Color.green : Color.purple)
                                     VStack(alignment: .leading, spacing: 6) {
-                                        Text("\(repo.fullName) #\(item.number)").font(.caption).foregroundStyle(.secondary)
+                                        Text("\(repo.fullName) #\(String(item.number))").font(.caption).foregroundStyle(.secondary)
                                         Text(item.title).font(.body.weight(.semibold)).foregroundStyle(.primary)
                                         HStack {
                                             Text(item.user?.login ?? "Deleted user")
@@ -117,7 +117,7 @@ struct ConversationDetailView: View {
                         CommentAuthor(login: item.user?.login, date: item.createdAt)
                         if let head = item.head, let base = item.base { Text("\(head.ref) → \(base.ref)").font(.caption.monospaced()).foregroundStyle(.secondary) }
                         MarkdownText(text: item.body ?? "No description provided.")
-                    } header: { Text("\(repository.fullName) #\(number)").textCase(nil) }
+                    } header: { Text("\(repository.fullName) #\(String(number))").textCase(nil) }
                     if kind == .pullRequest {
                         Section {
                             NavigationLink("Files changed") { PullFilesView(repository: repository, number: number) }
@@ -145,7 +145,7 @@ struct ConversationDetailView: View {
                 }
             }
         }
-        .navigationTitle("#\(number)").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("#\(String(number))").navigationBarTitleDisplayMode(.inline)
         .toolbar { if let item { ShareLink(item: item.htmlUrl) } }
         .task(id: store.account) { await load(reset: true) }
         .refreshable { await load(reset: true) }

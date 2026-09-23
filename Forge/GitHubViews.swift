@@ -202,6 +202,7 @@ struct RepositoryView: View {
             }
             Section {
                 NavigationLink { RepositoryFilesView(repository: repository) } label: { WorkLabel("Code", icon: "repo", color: Color(white: 0.28)) }
+                NavigationLink { CreateBranchView(repository: repository) } label: { Label("Create branch", systemImage: "arrow.triangle.branch").foregroundStyle(.primary) }
                 NavigationLink { ConversationListView(kind: .issue, repository: repository) } label: { WorkLabel("Issues", icon: "issue-opened", color: .green) }
                 NavigationLink { ConversationListView(kind: .pullRequest, repository: repository) } label: { WorkLabel("Pull Requests", icon: "git-pull-request", color: .blue) }
                 NavigationLink { ConversationListView(kind: .discussion, repository: repository) } label: { WorkLabel("Discussions", icon: "comment-discussion", color: .purple) }
@@ -301,6 +302,8 @@ struct InboxView: View {
     @State private var error: String?
     @State private var requestID = UUID()
     @State private var selected: GitHubNotification?
+    @State private var markingRead: Set<String> = []
+    @State private var readError: String?
 
     private var visible: [GitHubNotification] {
         entries.filter {
@@ -316,7 +319,10 @@ struct InboxView: View {
                     Text("Unread").tag(true)
                 }.pickerStyle(.segmented).listRowBackground(Color.clear)
                 ForEach(visible) { entry in
-                    Button { selected = entry } label: {
+                    Button {
+                        selected = entry
+                        Task { await markRead(entry) }
+                    } label: {
                         HStack(alignment: .top, spacing: 12) {
                             Octicon(entry.subject.type == "PullRequest" ? "git-pull-request" : entry.subject.type == "Issue" ? "issue-opened" : "inbox")
                                 .foregroundStyle(entry.subject.type == "PullRequest" ? .purple : .green)
@@ -329,7 +335,14 @@ struct InboxView: View {
                             if entry.unread { Circle().fill(.blue).frame(width: 7, height: 7).accessibilityLabel("Unread") }
                         }.padding(.vertical, 6)
                     }.disabled(entry.webURL == nil)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        if entry.unread {
+                            Button { Task { await markRead(entry) } } label: { Label("Mark read", systemImage: "envelope.open") }
+                                .tint(.blue).disabled(markingRead.contains(entry.id))
+                        }
+                    }
                 }
+                if let readError { ErrorNotice(message: readError) }
                 if busy { ProgressView("Loading notifications...") }
                 if let error {
                     Section {
@@ -365,12 +378,25 @@ struct InboxView: View {
         }
     }
 
+    private func markRead(_ entry: GitHubNotification) async {
+        guard entry.unread, !markingRead.contains(entry.id) else { return }
+        let account = store.account
+        readError = nil
+        markingRead.insert(entry.id)
+        defer { markingRead.remove(entry.id) }
+        do {
+            try await store.client.markNotificationRead(id: entry.id)
+            guard store.account == account else { return }
+            if let index = entries.firstIndex(where: { $0.id == entry.id }) { entries[index].unread = false }
+        } catch { if store.account == account { readError = "Couldn't mark this notification as read. Swipe the item to retry. \(error.localizedDescription)" } }
+    }
+
     private func load(reset: Bool) async {
         if !reset && busy { return }
         let id = UUID()
         requestID = id
         error = nil
-        if reset { entries = []; page = 0; more = false }
+        if reset { entries = []; page = 0; more = false; readError = nil }
         guard store.hasToken else { busy = false; return }
         busy = true
         let nextPage = page + 1

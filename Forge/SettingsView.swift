@@ -111,7 +111,7 @@ struct SettingsView: View {
                     LabeledContent("Contents", value: "Read-only")
                     Text("Create a fine-grained token for your favorite repositories. Actions read access enables artifact downloads; Contents read access enables private release downloads.")
                         .font(.footnote).foregroundStyle(.secondary)
-                    Text("To create issues, add Issues: Read and write. To submit pull-request reviews or resolve conversations, add Pull requests: Read and write. Merging also requires Contents: Read and write and repository write access. GitHub still enforces branch rules.").font(.footnote).foregroundStyle(.secondary)
+                    Text("To create issues, add Issues: Read and write. To submit pull-request reviews or resolve conversations, add Pull requests: Read and write. Merging and creating branches also require Contents: Read and write and repository write access. GitHub still enforces branch rules.").font(.footnote).foregroundStyle(.secondary)
                     Text("Inbox notifications require a classic token with notifications scope (repo scope for private repositories). GitHub does not support fine-grained tokens for this endpoint.").font(.footnote).foregroundStyle(.secondary)
                     Link("Create a classic token for Inbox", destination: URL(string: "https://github.com/settings/tokens/new")!)
                     Link("Create a token on GitHub", destination: URL(string: "https://github.com/settings/personal-access-tokens/new")!)

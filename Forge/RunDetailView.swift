@@ -25,7 +25,7 @@ struct RunDetailView: View {
                     Text(run.displayTitle).font(.title2.bold()).textSelection(.enabled)
                     StatusBadge(state: run.state)
                     Label(run.headBranch ?? "Unknown branch", systemImage: "arrow.triangle.branch").font(.subheadline)
-                    Text("Run #\(run.runNumber) · Attempt \(run.runAttempt) · \(run.headSha.prefix(7))")
+                    Text("Run #\(String(run.runNumber)) · Attempt \(String(run.runAttempt)) · \(run.headSha.prefix(7))")
                         .font(.caption).foregroundStyle(.secondary)
                 }.padding(.vertical, 8)
                 Link(destination: run.htmlUrl) { Label("Open run on GitHub", systemImage: "arrow.up.right.square") }

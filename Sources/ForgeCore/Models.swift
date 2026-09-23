@@ -139,7 +139,7 @@ struct GitHubNotification: Decodable, Identifiable, Sendable {
     }
     struct NotificationRepository: Decodable, Sendable { let fullName: String }
     let id: String
-    let unread: Bool
+    var unread: Bool
     let updatedAt: Date
     let subject: Subject
     let repository: NotificationRepository
