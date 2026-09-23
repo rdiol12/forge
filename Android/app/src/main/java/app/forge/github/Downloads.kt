@@ -129,7 +129,7 @@ class Downloads(private val context: Context) {
         if (entry.systemID > 0) manager.remove(entry.systemID)
         entry.active = false; entry.status = "Cancelled"; entry.file = ""; save()
     }
-    fun cancelAll() { entries.filter { it.active }.forEach(::cancel) }
+    fun cancelAll() { refresh(); entries.filter { it.active }.forEach(::cancel) }
     fun retry(api: GitHub, entry: DownloadEntry) { cancel(entry); entries.remove(entry); start(api, entry.spec) }
     fun file(entry: DownloadEntry): File {
         require(entry.status == "Saved" && entry.file.isNotBlank()) { "Download this file first." }

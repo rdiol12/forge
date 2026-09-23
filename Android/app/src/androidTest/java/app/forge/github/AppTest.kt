@@ -144,6 +144,13 @@ class AppTest {
             val downloaded = withContext(Dispatchers.Main) { downloads.file(entry) }
             assertTrue(downloaded.length() > 0)
             downloaded.inputStream().use { assertEquals('P'.code, it.read()); assertEquals('K'.code, it.read()) }
+            withContext(Dispatchers.Main) {
+                // A transfer may finish while another screen still holds its last in-progress state.
+                entry.active = true; entry.status = "Downloading…"
+                downloads.cancelAll()
+                assertEquals("Saved", entry.status)
+                assertTrue(downloads.file(entry).isFile)
+            }
         }
     }
 }
