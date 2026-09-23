@@ -52,7 +52,7 @@ No Apple credentials or repository secrets are needed. The workflow uses GitHub'
 4. Tap **+** and add a repository as `owner/name`, such as `cli/cli`.
 5. Open a release, tap **Download**, then **Save to Files or share**. Actions artifacts are under the individual run.
 
-This workspace is Windows. The portable Swift core can be tested here, but an Apple SDK is needed to compile and run the SwiftUI interface. The iPhone build, UI layout, Keychain, share sheet, and authenticated artifact download still need verification on a Mac/device.
+The workspace is Windows; GitHub Actions performs the actual iOS device build on macOS. The Release target and shared Swift tests passed in [the first CI run](https://github.com/rdiol12/forge-ios/actions/runs/35834516428). UI layout, Keychain, share sheet, and authenticated artifact downloads still need verification on a device.
 
 ## Connect GitHub
 
@@ -92,7 +92,8 @@ Verified on 2026-09-23 with Swift 6.0.3 in the existing Linux container:
 - All 11 app/core Swift files passed Swift syntax parsing; the core and live-check executable compiled successfully.
 - The live check decoded 30 public workflow runs, 22 release assets with counts, 4 jobs, and 4 artifacts from `cli/cli`; it downloaded the 1,971-byte `gh_2.101.0_checksums.txt` through the app's API client and redirect policy.
 - Xcode object IDs, source references, scheme XML, property lists, asset JSON, and the app icon passed structural checks.
-- **Not yet verified:** iOS target type-check/build, simulator/device UI, native download progress/cancellation/persistence, Keychain, sharing, and token-authenticated artifact/private-repository downloads. Syntax parsing is not an iOS build.
+- **Also verified in GitHub Actions:** all 11 tests on macOS, the complete Release iOS device build with Xcode 16.4, and IPA packaging/checksum validation. The binary targets iOS devices with iOS 17 as its minimum version.
+- **Not yet verified:** simulator/device UI, native download progress/cancellation/persistence, Keychain, sharing, and token-authenticated artifact/private-repository downloads.
 
 ## Current limits
 

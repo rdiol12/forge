@@ -96,7 +96,7 @@ jobs:
           cat > "$RUNNER_TEMP/release-notes.md" <<EOF
           Native SwiftUI GitHub client for iOS 17 and later.
 
-          **Unsigned IPA:** sign `Forge-unsigned.ipa` with your sideloading tool before installing. No Apple certificate or provisioning profile is included.
+          **Unsigned IPA:** sign Forge-unsigned.ipa with your sideloading tool before installing. No Apple certificate or provisioning profile is included.
 
           Includes Actions monitoring, build artifact downloads, release download counts, and Save to Files.
 
@@ -104,14 +104,18 @@ jobs:
           Build: $GITHUB_RUN_NUMBER (attempt $GITHUB_RUN_ATTEMPT)
           Workflow: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
 
-          Verify the download with the attached `SHA256SUMS` file.
+          Verify the download with the attached SHA256SUMS file.
           EOF
-          gh release create "$tag" dist/Forge-unsigned.ipa dist/SHA256SUMS \
+          gh release create "$tag" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "Forge $version · build $GITHUB_RUN_NUMBER (unsigned)" \
             --notes-file "$RUNNER_TEMP/release-notes.md" \
             --draft --prerelease="$prerelease"
+          gh release upload "$tag" dist/Forge-unsigned.ipa dist/SHA256SUMS --repo "$GITHUB_REPOSITORY"
+          release_id=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" --jq .id)
+          assets=$(gh api "repos/$GITHUB_REPOSITORY/releases/$release_id/assets" --jq '[.[] | select(.state == "uploaded" and .size > 0) | .name] | sort | join(",")')
+          test "$assets" = 'Forge-unsigned.ipa,SHA256SUMS'
           gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease="$prerelease"
           release_url=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url --jq .url)
           printf '### Unsigned IPA published\n\n[Download Forge](%s)\n\nSign the IPA with your sideloading tool before installing.\n' "$release_url" >> "$GITHUB_STEP_SUMMARY"
