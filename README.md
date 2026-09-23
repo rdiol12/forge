@@ -143,8 +143,6 @@ On 2026-09-23 the authenticated live check read cli/cli code, 30 issues, 30 pull
 
 The authenticated native check also reads watch state, PR merge settings, review threads, comments, and viewer permissions. Mutations are tested with mocked responses: the check never creates issues, submits reviews, changes subscriptions, marks notifications read, creates branches, or merges a real PR. Add `--forge-build` to verify the private Forge workflow, test steps, artifact download, release IPA, and checksum using the app's API client; files are saved under ignored `dist/api-check-build-<number>/`.
 
-The `--account` live check verified the native profile, 15 owned repositories including private Forge, starred repositories, visible organization memberships, and private workflow runs/jobs/artifacts without Favorites state. It reads credentials from stdin only and makes no writes to GitHub.
-
 ## Additional permissions and API references
 
 Actions write is needed for re-runs/cancellation; Issues write for issue changes; Pull requests write for reviews/line comments; Discussions write for replies; Contents write for README commits and release changes; Administration write plus repository admin access for visibility changes. Read-only tokens continue to browse.
