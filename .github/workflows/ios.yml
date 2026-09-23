@@ -1,24 +1,28 @@
-name: Build and publish IPA
+name: Build and publish iOS and Android
 
 on:
   push:
     branches: [main]
     tags: ['v*']
-    paths-ignore: ['**/*.md', 'Android/**', '.github/workflows/android.yml']
+    paths-ignore: ['**/*.md']
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+  actions: read
 
 concurrency:
-  group: ios-${{ github.ref }}
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   ipa:
-    name: Test, build, and publish unsigned IPA
+    name: Test and build iOS
     runs-on: macos-15
     timeout-minutes: 30
+    outputs:
+      artifact-name: Forge-unsigned-${{ github.run_number }}-${{ github.run_attempt }}
+      version: ${{ steps.package.outputs.version }}
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     defaults:
@@ -71,11 +75,14 @@ jobs:
           retention-days: 14
 
       - name: Package and check the unsigned IPA
+        id: package
         run: |
           set -euo pipefail
           app="$GITHUB_WORKSPACE/build/Build/Products/Release-iphoneos/Forge.app"
           test -f "$app/Info.plist"
           test -x "$app/Forge"
+          version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app/Info.plist")
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
           xcrun vtool -show-build "$app/Forge"
           mkdir -p "$RUNNER_TEMP/ipa/Payload" dist
           ditto "$app" "$RUNNER_TEMP/ipa/Payload/Forge.app"
@@ -97,56 +104,6 @@ jobs:
           compression-level: 0
           retention-days: 14
 
-      - name: Publish the private GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
-            tag="$GITHUB_REF_NAME"
-            prerelease=false
-          else
-            tag="build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
-            prerelease=true
-          fi
-          version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' build/Build/Products/Release-iphoneos/Forge.app/Info.plist)
-          cat > "$RUNNER_TEMP/release-notes.md" <<EOF
-          Native SwiftUI GitHub client for iOS 17 and later.
-
-          **Unsigned IPA:** sign Forge-unsigned.ipa with your sideloading tool before installing. No Apple certificate or provisioning profile is included.
-
-          Native Issues, Discussions, pull requests, reviews, diffs, and code reading. Create issues, watch conversations, approve or request changes, resolve review threads, and merge using the repository's allowed methods. Writes require appropriate GitHub permissions; merges confirm the displayed commit and respect repository rules. No push alerts or merge-conflict editor yet.
-
-          GitHub links open native Forge destinations when supported; remaining web pages stay in the in-app browser. Actions monitoring, test jobs and steps, artifact downloads, release download counts, and Save to Files remain available.
-
-          Feedback improvements: Inbox read state syncs with GitHub when opening or swiping a notification. Create branches from a named source branch using a native repository form. Issue and run identifiers display without thousands separators.
-
-          Profile shortcuts now open native account details, your repositories (including accessible private repositories), starred repositories, and organizations. Open Profile > Your repository Actions to browse workflow runs, jobs, and artifacts. Repository Actions and Releases work without adding a favorite, with pagination and refresh.
-
-          New in 0.7: native followers/following, branch switching, syntax-colored code, Markdown/JSON previews, README commits, repository visibility controls, release editing/deletion, background archive downloads, latest successful builds, searchable job logs, re-run/cancel controls, issue editing, Discussion replies and PR line comments.
-
-          Browser sign-in is implemented and awaits GitHub OAuth registration and backend activation. Manual token sign-in remains available in Settings.
-
-          Commit: $GITHUB_SHA
-          Build: $GITHUB_RUN_NUMBER (attempt $GITHUB_RUN_ATTEMPT)
-          Workflow: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
-
-          Verify the download with the attached SHA256SUMS file.
-          EOF
-          gh release create "$tag" \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "Forge $version - build $GITHUB_RUN_NUMBER (unsigned)" \
-            --notes-file "$RUNNER_TEMP/release-notes.md" \
-            --draft --prerelease="$prerelease"
-          gh release upload "$tag" dist/Forge-unsigned.ipa dist/SHA256SUMS --repo "$GITHUB_REPOSITORY"
-          release_api=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json apiUrl --jq .apiUrl)
-          assets=$(gh api "$release_api/assets" --jq '[.[] | select(.state == "uploaded" and .size > 0) | .name] | sort | join(",")')
-          test "$assets" = 'Forge-unsigned.ipa,SHA256SUMS'
-          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease="$prerelease"
-          release_url=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url --jq .url)
-          printf '### Unsigned IPA published\n\n[Download Forge](%s)\n\nSign the IPA with your sideloading tool before installing.\n' "$release_url" >> "$GITHUB_STEP_SUMMARY"
-
       - name: Keep build diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -157,3 +114,204 @@ jobs:
             ${{ runner.temp }}/simulator-build.log
           if-no-files-found: ignore
           retention-days: 7
+
+  apk:
+    name: Test and build Android
+    outputs:
+      artifact-name: Forge-Android-${{ github.run_number }}-${{ github.run_attempt }}
+      version: ${{ steps.package.outputs.version }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: Android
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+          cache-dependency-path: |
+            Android/**/*.gradle.kts
+            Android/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Set up Android command-line tools
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
+        with:
+          cmdline-tools-version: '12266719'
+          packages: 'platform-tools'
+          log-accepted-android-sdk-licenses: false
+
+      - name: Prepare Android SDK and signing key
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+        run: |
+          set -euo pipefail
+          test -n "$ANDROID_KEYSTORE"
+          umask 077
+          printf '%s' "$ANDROID_KEYSTORE" | base64 --decode > "$RUNNER_TEMP/forge-android.jks"
+          sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+          chmod +x gradlew
+          sudo chmod 666 /dev/kvm
+
+      - name: Test, lint, and build APKs
+        env:
+          FORGE_KEYSTORE: ${{ runner.temp }}/forge-android.jks
+          FORGE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew --no-daemon testDebugUnitTest lintRelease assembleRelease assembleDebug assembleDebugAndroidTest --console=plain
+
+      - name: Verify native Android screens, secure storage, and private GitHub reads
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          working-directory: Android
+          script: |
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb install -t -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+            adb shell run-as app.forge.github.debug mkdir -p files
+            printf '%s' "$GH_TOKEN" | adb shell run-as app.forge.github.debug tee files/live-token > /dev/null
+            mkdir -p ../dist/android-screenshots
+            adb shell am instrument -w -r app.forge.github.debug.test/androidx.test.runner.AndroidJUnitRunner | tee ../dist/android-screenshots/instrumentation.txt
+            grep -Eq '^OK \([1-9][0-9]* tests?\)' ../dist/android-screenshots/instrumentation.txt
+            adb pull /sdcard/Android/data/app.forge.github.debug/files/screenshots/. ../dist/android-screenshots/
+            adb shell run-as app.forge.github.debug rm files/live-token
+            adb install -r app/build/outputs/apk/release/app-release.apk
+            adb shell am start -W -n app.forge.github/.MainActivity
+            sleep 3
+            adb shell pidof app.forge.github
+            adb shell uiautomator dump /sdcard/forge-release.xml
+            adb shell cat /sdcard/forge-release.xml | grep 'text="Home"'
+            adb exec-out screencap -p > ../dist/android-screenshots/release-home.png
+
+      - name: Verify and package the signed APK
+        id: package
+        run: |
+          set -euo pipefail
+          mkdir -p ../dist/android
+          cp app/build/outputs/apk/release/app-release.apk ../dist/android/Forge-android.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs ../dist/android/Forge-android.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging ../dist/android/Forge-android.apk
+          version=$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging ../dist/android/Forge-android.apk | sed -n "s/^package:.* versionName='\([^']*\)'.*/\1/p")
+          test -n "$version"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+          unzip -tq ../dist/android/Forge-android.apk
+          cd ../dist/android
+          sha256sum Forge-android.apk > SHA256SUMS
+          sha256sum -c SHA256SUMS
+
+      - name: Keep the signed APK as a workflow artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: Forge-Android-${{ github.run_number }}-${{ github.run_attempt }}
+          path: dist/android/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+      - name: Keep Android screenshots and checks
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: Android-checks-${{ github.run_number }}-${{ github.run_attempt }}
+          path: |
+            dist/android-screenshots/
+            Android/app/build/reports/tests/
+            Android/app/build/reports/androidTests/
+            Android/app/build/reports/lint-results-release.html
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Remove temporary signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/forge-android.jks"
+
+      - name: Keep diagnostics if a check fails
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: Android-failure-${{ github.run_number }}-${{ github.run_attempt }}
+          path: |
+            Android/app/build/reports/
+            dist/android-screenshots/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  publish:
+    name: Publish iOS and Android together
+    needs: [ipa, apk]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      IPA_ARTIFACT: ${{ needs.ipa.outputs.artifact-name }}
+      APK_ARTIFACT: ${{ needs.apk.outputs.artifact-name }}
+      VERSION: ${{ needs.ipa.outputs.version }}
+      ANDROID_VERSION: ${{ needs.apk.outputs.version }}
+    steps:
+      - name: Collect both tested apps and verify checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/$GITHUB_REPOSITORY" --jq .private)" = true
+          test -n "$VERSION"
+          test "$VERSION" = "$ANDROID_VERSION"
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "$IPA_ARTIFACT" --dir artifacts/ios
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "$APK_ARTIFACT" --dir artifacts/android
+          (cd artifacts/ios && sha256sum -c SHA256SUMS)
+          (cd artifacts/android && sha256sum -c SHA256SUMS)
+          mkdir release
+          cp artifacts/ios/Forge-unsigned.ipa artifacts/android/Forge-android.apk release/
+          cd release
+          sha256sum Forge-unsigned.ipa Forge-android.apk > SHA256SUMS
+          sha256sum -c SHA256SUMS
+
+      - name: Publish one private release with IPA and APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            tag="$GITHUB_REF_NAME"
+            prerelease=false
+          else
+            tag="build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+            prerelease=true
+          fi
+          cat > "$RUNNER_TEMP/release-notes.md" <<EOF
+          Forge $VERSION for **iOS and Android**, built and tested from the same source commit.
+
+          - **iOS 17+:** download Forge-unsigned.ipa and sign it with your sideloading tool before installing. No Apple certificate or provisioning profile is included.
+          - **Android 8.0+:** download and install Forge-android.apk. It uses Forge's persistent signing key so future builds can update the same app.
+
+          Native Home, Inbox, Explore and Profile; private repositories and owned-repository Actions; jobs, logs, artifacts and downloads; releases with per-file download counts; branch switching, syntax-colored code, README editing, native issues, Discussions, PR reviews and confirmed merges. Repository visibility and release changes require the appropriate GitHub permissions.
+
+          Manual token sign-in is available. Browser sign-in still needs GitHub OAuth registration and backend activation. GitHub does not expose Actions-artifact download counts. No push alerts or merge-conflict editor yet.
+
+          Both platforms passed their build and test checks before this release was published. Verify either download with the attached SHA256SUMS file.
+
+          Commit: $GITHUB_SHA
+          Build: $GITHUB_RUN_NUMBER (attempt $GITHUB_RUN_ATTEMPT)
+          Workflow: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+          EOF
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Forge $VERSION - iOS and Android - build $GITHUB_RUN_NUMBER" \
+            --notes-file "$RUNNER_TEMP/release-notes.md" --draft --prerelease="$prerelease"
+          gh release upload "$tag" release/Forge-unsigned.ipa release/Forge-android.apk release/SHA256SUMS --repo "$GITHUB_REPOSITORY"
+          release_api=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json apiUrl --jq .apiUrl)
+          assets=$(gh api "$release_api/assets" --jq '[.[] | select(.state == "uploaded" and .size > 0) | .name] | sort | join(",")')
+          test "$assets" = 'Forge-android.apk,Forge-unsigned.ipa,SHA256SUMS'
+          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease="$prerelease"
+          release_url=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url --jq .url)
+          printf '### iOS and Android published together\n\n[Download both apps](%s)\n\nSign the IPA with your sideloading tool. The APK is ready to install.\n' "$release_url" >> "$GITHUB_STEP_SUMMARY"

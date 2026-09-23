@@ -47,19 +47,20 @@ Sources: [Release assets](https://docs.github.com/en/rest/releases/assets), [Act
 
 ### Download a CI build
 
-The private [forge-ios repository](https://github.com/rdiol12/forge-ios) builds on GitHub's macOS runners. Download `Forge-unsigned.ipa` from [Releases](https://github.com/rdiol12/forge-ios/releases), then sign it with your sideloading tool before installing. You must have access to the private repository to download its releases.
+The private [forge-ios repository](https://github.com/rdiol12/forge-ios) builds iOS on macOS and Android on Linux. Download `Forge-unsigned.ipa` and `Forge-android.apk` together from [Releases](https://github.com/rdiol12/forge-ios/releases). Sign the IPA with your sideloading tool; the APK is signed and ready to install. You must have access to the private repository to download its releases.
 
-[Build and publish IPA](https://github.com/rdiol12/forge-ios/actions/workflows/ios.yml) runs on pushes to `main`, version tags (`v*`), and manual **Run workflow** requests. Documentation-only branch pushes are skipped. Each run:
+[Build and publish iOS and Android](https://github.com/rdiol12/forge-ios/actions/workflows/ios.yml) runs on pushes to `main`, version tags (`v*`), and manual **Run workflow** requests. Documentation-only branch pushes are skipped. Both apps share the same source commit and build number. Each run:
 
 1. Runs the shared Swift tests and OAuth backend tests.
 2. Builds the Release iOS device target with Xcode 26.3 and signing disabled. Native Liquid Glass navigation is available on iOS 26; earlier systems use their native appearance.
 3. Builds and launches an iPhone simulator and saves light/dark Home screenshots plus a native issue screenshot as a workflow artifact. The screenshot simulator has four public favorite repositories; installed IPAs still start empty.
 4. Packages the app as `Payload/Forge.app` inside an IPA and checks its ZIP integrity and SHA-256 checksum.
-5. Uploads the IPA/checksum as an Actions artifact and publishes them as a private GitHub release.
+5. In parallel, tests/lints Android, builds the signed APK, checks native screens and Keystore on an emulator, and verifies real private repository/artifact downloads. It also launches the optimized release APK and verifies its signature and checksum.
+6. Keeps both apps and their checks as Actions artifacts. After **both jobs pass**, one publishing job checks matching app versions and creates **one private release** containing the IPA, APK and a shared `SHA256SUMS`. The release stays a draft until all three files have uploaded successfully. If either build fails, nothing is published.
 
 Branch/manual runs create prereleases named `build-<run>-<attempt>`. Version tags create normal releases. Existing release tags are never overwritten; choose a new version tag for another published version. A failed upload may leave an unpublished draft to remove before retrying that version tag. Build logs are retained on failure.
 
-No Apple credentials or repository secrets are needed. The workflow uses GitHub's temporary token with repository contents permission. This is an **unsigned** device build for later signing, not an App Store/TestFlight upload or an immediately installable IPA. GitHub-hosted runner usage is charged against the account's Actions allowance.
+No Apple credentials are needed. Android uses the existing `ANDROID_KEYSTORE` and `ANDROID_KEY_PASSWORD` secrets for its persistent signing key. The workflow uses GitHub's temporary token; only the final publishing job has repository contents write permission. The IPA is an **unsigned** device build for later signing, not an App Store/TestFlight upload or an immediately installable IPA. GitHub-hosted runner usage is charged against the account's Actions allowance.
 
 ### Build locally
 
@@ -156,6 +157,6 @@ The 0.7.0 [build 15](https://github.com/rdiol12/forge-ios/actions/runs/359010748
 
 ## Android
 
-A native Android app now lives in [Android](Android/README.md), with the same main navigation and GitHub tools. Its separate workflow publishes a signed, installable APK to private GitHub Releases. Android and iOS builds run independently. See the Android README for setup, signing, checks and current limits.
+A native Android app lives in [Android](Android/README.md), with the same main navigation and GitHub tools. The shared workflow builds both platforms in parallel and publishes the signed APK and unsigned IPA together in one private release. See the Android README for setup, signing, checks and current limits.
 
 The final iOS layout correction is in [0.7.0 build 16, attempt 2](https://github.com/rdiol12/forge-ios/releases/tag/build-16-2): 45 Swift tests, 2 backend tests, device/simulator builds and screenshots passed. The first attempt stalled booting the hosted simulator; the fresh runner completed. The 1,525,805-byte unsigned device IPA passed ZIP integrity, SHA-256 and version checks: `b685f4305102c6d5ff06ed419f9d64d5531788680bdaf725e430dbd5a1d193ab`. The final code screenshots confirm the corrected line-number gutter.
