@@ -7,7 +7,7 @@ struct CheckNative {
         let token = CommandLine.arguments.contains("--authenticated") ? (readLine() ?? "") : ""
         let client = GitHubClient(token: token)
         if CommandLine.arguments.contains("--workspace") {
-            let repository = try Repository("rdiol12/forge-ios")
+            let repository = try Repository("rdiol12/forge")
             let settings: RepositorySettings = try await client.get("/repos/\(repository.fullName)")
             precondition(settings.visibility == "private")
             let people = try await client.people(login: "octocat", collection: .following, page: 1)
@@ -45,14 +45,14 @@ struct CheckNative {
             while true {
                 let repositories = try await client.accountRepositories(.owned, page: page)
                 count += repositories.count
-                foundForge = foundForge || repositories.contains { $0.fullName.lowercased() == "rdiol12/forge-ios" }
+                foundForge = foundForge || repositories.contains { $0.fullName.lowercased() == "rdiol12/forge" }
                 if foundForge || repositories.count < 30 { break }
                 page += 1
             }
             guard !profile.login.isEmpty, foundForge else { throw GitHubError("The native account repository list did not include the private Forge repository.") }
             let stars = try await client.accountRepositories(.starred, page: 1)
             let organizations = try await client.organizations(page: 1)
-            let repository = try Repository("rdiol12/forge-ios")
+            let repository = try Repository("rdiol12/forge")
             let runs = try await client.runs(in: repository)
             guard let run = runs.first else { throw GitHubError("The private repository has no workflow runs.") }
             let jobs = try await client.jobs(in: repository, run: run, page: 1)
@@ -118,7 +118,7 @@ struct CheckNative {
     }
 
     private static func checkForgeBuild(_ client: GitHubClient) async throws {
-        let repository = try Repository("rdiol12/forge-ios")
+        let repository = try Repository("rdiol12/forge")
         let runs = try await client.runs(in: repository)
         guard let run = runs.first(where: { $0.conclusion == "success" }) else { throw GitHubError("No successful Forge build found.") }
         let jobs = try await client.jobs(in: repository, run: run, page: 1)

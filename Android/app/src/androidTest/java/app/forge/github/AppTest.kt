@@ -108,7 +108,7 @@ class AppTest {
         val file = File(context.filesDir, "live-token")
         assumeTrue("CI supplies an ephemeral read token for this check", file.exists())
         val api = GitHub(file.readText().trim())
-        val repo = "rdiol12/forge-ios"
+        val repo = "rdiol12/forge"
         val info = api.obj("/repos/$repo")
         assertTrue(info.optBoolean("private"))
         val branch = info.getString("default_branch")
