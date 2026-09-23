@@ -19,10 +19,21 @@ struct DownloadSpec: Codable, Identifiable, Sendable {
     }
 
     static func repositoryFile(_ file: RepositoryFile, in repository: Repository) throws -> Self {
-        guard file.type == "file", file.safePath else { throw GitHubError("This repository file cannot be downloaded.") }
+        guard file.type == "file", file.safePath, file.sha.range(of: #"^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$"#, options: .regularExpression) != nil else { throw GitHubError("This repository file cannot be downloaded.") }
         return Self(id: "file-\(repository.id)-\(file.sha)-\(file.path)", name: safeFilename(file.name), repository: repository.fullName,
-                    path: "/repos/\(repository.fullName)/contents/\(file.path)", accept: "application/vnd.github.raw+json",
+                    path: "/repos/\(repository.fullName)/git/blobs/\(file.sha)", accept: "application/vnd.github.raw+json",
                     size: file.size, requiresAuthentication: false)
+    }
+
+    static func repositoryArchive(in repository: Repository, sha: String, name: String) throws -> Self {
+        guard sha.range(of: #"^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$"#, options: .regularExpression) != nil else { throw GitHubError("Choose a branch before downloading its ZIP.") }
+        return Self(id: "archive-\(repository.id)-\(sha)", name: safeFilename("\(repository.name)-\(name).zip"), repository: repository.fullName,
+                    path: "/repos/\(repository.fullName)/zipball/\(sha)", accept: "application/vnd.github+json", size: 0, requiresAuthentication: false)
+    }
+
+    static func jobLog(in repository: Repository, job: WorkflowJob) -> Self {
+        Self(id: "log-\(repository.id)-\(job.id)", name: safeFilename("\(job.name)-\(job.id).log"), repository: repository.fullName,
+             path: "/repos/\(repository.fullName)/actions/jobs/\(job.id)/logs", accept: "application/vnd.github+json", size: 0, requiresAuthentication: false)
     }
 
     static func artifact(_ artifact: Artifact, in repository: Repository, now: Date = .now) throws -> Self {
@@ -45,13 +56,24 @@ struct DownloadSpec: Codable, Identifiable, Sendable {
     static func redirect(_ incoming: URLRequest) -> URLRequest? {
         guard let url = incoming.url, url.scheme == "https", url.user == nil, url.password == nil,
               url.port == nil || url.port == 443, let host = url.host?.lowercased() else { return nil }
-        let trusted = host == "api.github.com" || host == "github.com" || host.hasSuffix(".githubusercontent.com") || host.hasSuffix(".blob.core.windows.net")
+        let trusted = host == "api.github.com" || host == "github.com" || host == "codeload.github.com" || host.hasSuffix(".githubusercontent.com") || host.hasSuffix(".blob.core.windows.net")
         guard trusted else { return nil }
         var request = incoming
         if host != "api.github.com" {
             request.setValue(nil, forHTTPHeaderField: "Authorization")
             request.setValue(nil, forHTTPHeaderField: "Cookie")
         }
+        return request
+    }
+
+    static func backgroundRequest(for url: URL) throws -> URLRequest {
+        // iOS background sessions follow redirects without consulting a delegate. Never give them the GitHub token.
+        guard url.host?.lowercased() != "api.github.com", let safe = redirect(URLRequest(url: url)) else {
+            throw GitHubError("GitHub returned an unsupported download location.")
+        }
+        var request = safe
+        request.httpShouldHandleCookies = false
+        request.timeoutInterval = 60
         return request
     }
 }

@@ -339,11 +339,11 @@ final class ForgeCoreTests: XCTestCase {
     }
 
     func testRepositoryFilesUseRawContentWithoutChangingTheAPIHost() throws {
-        let file = RepositoryFile(name: "hello #1?.txt", path: "docs/hello #1?.txt", sha: "abc", type: "file", size: 123)
+        let file = RepositoryFile(name: "hello #1?.txt", path: "docs/hello #1?.txt", sha: String(repeating: "a", count: 40), type: "file", size: 123)
         let spec = try DownloadSpec.repositoryFile(file, in: Repository("owner/repo"))
         let request = try GitHubClient(token: "test-only").downloadRequest(spec)
         XCTAssertEqual(request.url?.host, "api.github.com")
-        XCTAssertEqual(request.url?.path, "/repos/owner/repo/contents/docs/hello #1?.txt")
+        XCTAssertEqual(request.url?.path, "/repos/owner/repo/git/blobs/\(file.sha)")
         XCTAssertNil(request.url?.query)
         XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "application/vnd.github.raw+json")
         XCTAssertEqual(spec.name, file.name)

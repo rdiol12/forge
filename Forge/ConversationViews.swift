@@ -102,6 +102,8 @@ struct ConversationDetailView: View {
     @State private var busy = false
     @State private var error: String?
     @State private var watchRefresh = UUID()
+    @State private var compose = false
+    @State private var edit = false
 
     var body: some View {
         List {
@@ -130,8 +132,8 @@ struct ConversationDetailView: View {
                     Section("Conversation") {
                         ForEach(comments) { comment in
                             CommentView(comment: comment)
-                            if let count = comment.replies?.totalCount, count > 0, let id = comment.nodeId {
-                                NavigationLink("\(count) replies") { DiscussionRepliesView(commentID: id) }
+                            if kind == .discussion, let discussionID = item.nodeId, let id = comment.nodeId {
+                                NavigationLink("\(comment.replies?.totalCount ?? 0) replies · Reply") { DiscussionRepliesView(discussionID: discussionID, commentID: id) }
                             }
                         }
                         if comments.isEmpty && !busy && error == nil { Text("No comments yet.").foregroundStyle(.secondary) }
@@ -146,7 +148,24 @@ struct ConversationDetailView: View {
             }
         }
         .navigationTitle("#\(String(number))").navigationBarTitleDisplayMode(.inline)
-        .toolbar { if let item { ShareLink(item: item.htmlUrl) } }
+        .toolbar {
+            if let item {
+                ShareLink(item: item.htmlUrl)
+                if store.hasToken {
+                    Button { compose = true } label: { Label("Comment", systemImage: "square.and.pencil") }
+                    if kind == .issue { Button("Edit") { edit = true } }
+                }
+            }
+        }
+        .sheet(isPresented: $compose) {
+            CommentComposer(title: kind == .discussion ? "Discussion reply" : "Comment", context: "\(repository.fullName) #\(number)") { body in
+                if kind == .discussion, let id = item?.nodeId { try await store.client.replyToDiscussion(id: id, replyTo: nil, body: body) }
+                else if kind != .discussion { try await store.client.addComment(in: repository, number: number, body: body) }
+                else { throw GitHubError("Refresh this discussion before replying.") }
+                await load(reset: true)
+            }
+        }
+        .sheet(isPresented: $edit) { IssueEditor(repository: repository, number: number) { Task { await load(reset: true) } } }
         .task(id: store.account) { await load(reset: true) }
         .refreshable { await load(reset: true) }
     }
@@ -215,6 +234,7 @@ struct CommentView: View {
 
 @MainActor
 private struct DiscussionRepliesView: View {
+    let discussionID: String
     let commentID: String
     @Environment(ForgeStore.self) private var store
     @State private var comments: [ConversationComment] = []
@@ -222,6 +242,7 @@ private struct DiscussionRepliesView: View {
     @State private var more = false
     @State private var busy = false
     @State private var error: String?
+    @State private var compose = false
     var body: some View {
         List {
             ForEach(comments) { CommentView(comment: $0) }
@@ -230,6 +251,13 @@ private struct DiscussionRepliesView: View {
             if more && !busy { Button("Load more replies") { Task { await load() } } }
         }.navigationTitle("Replies").navigationBarTitleDisplayMode(.inline)
         .task { if comments.isEmpty { await load() } }
+        .toolbar { Button("Reply") { compose = true }.disabled(!store.hasToken) }
+        .sheet(isPresented: $compose) {
+            CommentComposer(title: "Reply", context: "Reply to this discussion comment") { body in
+                try await store.client.replyToDiscussion(id: discussionID, replyTo: commentID, body: body)
+                comments = []; cursor = nil; more = false; await load()
+            }
+        }
     }
     private func load() async {
         guard !busy else { return }; busy = true; error = nil
@@ -285,12 +313,12 @@ private struct PullFilesView: View {
     @State private var more = false
     @State private var busy = false
     @State private var error: String?
+    @State private var sha: String?
     var body: some View {
         List {
             ForEach(files) { file in
                 NavigationLink {
-                    if let patch = file.patch { CodeTextView(text: patch).navigationTitle(file.filename).navigationBarTitleDisplayMode(.inline) }
-                    else { ContentUnavailableView("No text diff", systemImage: "doc", description: Text("GitHub omitted the patch for this file. Binary and some large changes have no text preview.")) }
+                    PullDiffView(repository: repository, number: number, file: file, sha: sha)
                 } label: {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(file.filename).font(.subheadline.monospaced())
@@ -304,13 +332,19 @@ private struct PullFilesView: View {
             if files.count >= 3000 { Text("GitHub returns at most 3,000 changed files per pull request.").font(.footnote).foregroundStyle(.secondary) }
         }.navigationTitle("Files changed").navigationBarTitleDisplayMode(.inline)
         .task { if page == 0 { await load() } }
+        .refreshable { if !busy { files = []; page = 0; sha = nil; await load() } }
     }
     private func load() async {
         guard !busy else { return }; busy = true; error = nil
         defer { busy = false }
         do {
+            let before = try await store.client.conversation(kind: .pullRequest, in: repository, number: number)
+            guard let revision = before.head?.sha, sha == nil || sha == revision else { throw GitHubError("This pull request changed. Pull to refresh its files before reviewing.") }
             let fetched: [PullFile] = try await store.client.get("/repos/\(repository.fullName)/pulls/\(number)/files", page: page + 1, count: 100)
+            let after = try await store.client.conversation(kind: .pullRequest, in: repository, number: number)
+            guard revision == after.head?.sha else { throw GitHubError("This pull request changed while loading. Pull to refresh.") }
             guard !Task.isCancelled else { return }
+            sha = revision
             files += fetched.filter { new in !files.contains { $0.id == new.id } }; page += 1; more = fetched.count == 100 && files.count < 3000
         } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
     }

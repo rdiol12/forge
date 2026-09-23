@@ -49,8 +49,9 @@ struct HomeView: View {
                 NavigationLink { ConversationListView(kind: .issue) } label: { WorkLabel("Issues", icon: "issue-opened", color: .green) }
                 NavigationLink { ConversationListView(kind: .pullRequest) } label: { WorkLabel("Pull Requests", icon: "git-pull-request", color: .blue) }
                 NavigationLink { ConversationListView(kind: .discussion) } label: { WorkLabel("Discussions", icon: "comment-discussion", color: .purple) }
-                NavigationLink { FavoritesView() } label: { WorkLabel("Top Repositories", icon: "repo", color: Color(white: 0.28)) }
+                NavigationLink { AccountRepositoriesView(collection: .owned) } label: { WorkLabel("Repositories", icon: "repo", color: Color(white: 0.28)) }
                 NavigationLink { OrganizationListView() } label: { WorkLabel("Organizations", icon: "organization", color: .orange) }
+                NavigationLink { AccountRepositoriesView(collection: .starred) } label: { WorkLabel("Starred", icon: "star", color: .yellow) }
             } header: {
                 HStack {
                     Text("My Work").font(.headline)
@@ -145,13 +146,14 @@ struct ActionsView: View {
     var body: some View {
         List {
             if repository == nil && store.hasToken {
-                NavigationLink { AccountRepositoriesView(collection: .owned, showsActions: true) } label: {
-                    WorkLabel("Your repository Actions", icon: "repo", color: .blue)
+                NavigationLink { OwnedActionsView() } label: {
+                    WorkLabel("All your repository Actions", icon: "repo", color: .blue)
                 }
             }
             Picker("Run status", selection: $filter) {
                 ForEach(["All", "Failed", "Active"], id: \.self) { Text($0).tag($0) }
             }.pickerStyle(.segmented).listRowBackground(Color.clear).listRowInsets(EdgeInsets())
+            if let repository { NavigationLink { LatestBuildView(repository: repository) } label: { Label("Latest successful build", systemImage: "arrow.down.circle") } }
             if repository == nil && !store.errors.isEmpty { RefreshErrors() }
             Section {
                 ForEach(visible) { entry in
@@ -284,7 +286,7 @@ struct ReleasesView: View {
     }
 }
 
-private struct RunRow: View {
+struct RunRow: View {
     let entry: RepositoryRun
     var body: some View {
         HStack(alignment: .top, spacing: 12) {

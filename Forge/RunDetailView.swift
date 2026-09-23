@@ -15,6 +15,9 @@ struct RunDetailView: View {
     @State private var runError: String?
     @State private var jobError: String?
     @State private var artifactError: String?
+    @State private var action: WorkflowAction = .rerunFailed
+    @State private var confirmAction = false
+    @State private var actionMessage: String?
     private var run: WorkflowRun { currentRun ?? entry.run }
 
     var body: some View {
@@ -28,7 +31,14 @@ struct RunDetailView: View {
                     Text("Run #\(String(run.runNumber)) · Attempt \(String(run.runAttempt)) · \(run.headSha.prefix(7))")
                         .font(.caption).foregroundStyle(.secondary)
                 }.padding(.vertical, 8)
-                Link(destination: run.htmlUrl) { Label("Open run on GitHub", systemImage: "arrow.up.right.square") }
+                if store.hasToken {
+                    if run.status == "completed" {
+                        Button("Re-run all jobs") { action = .rerun; confirmAction = true }.disabled(busy)
+                        if run.state == .failed { Button("Re-run failed jobs") { action = .rerunFailed; confirmAction = true }.disabled(busy) }
+                    } else { Button("Cancel run", role: .destructive) { action = .cancel; confirmAction = true }.disabled(busy) }
+                }
+                if let actionMessage { Text(actionMessage).font(.subheadline).foregroundStyle(.secondary) }
+                ShareLink(item: run.htmlUrl)
                 if let runError { ErrorNotice(message: runError) }
             }
 
@@ -71,7 +81,7 @@ struct RunDetailView: View {
                                 Text(step.name).font(.subheadline).textSelection(.enabled)
                             }.padding(.vertical, 4)
                         }
-                        if let url = job.htmlUrl { Link("Open job logs on GitHub", destination: url).font(.subheadline) }
+                        NavigationLink("View and search logs") { JobLogView(repository: entry.repository, job: job) }
                     } label: {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(job.name).font(.headline)
@@ -89,6 +99,19 @@ struct RunDetailView: View {
         .navigationTitle(run.name ?? "Workflow run").navigationBarTitleDisplayMode(.inline)
         .task { await reload() }
         .refreshable { await reload() }
+        .confirmationDialog("\(action.title) for run #\(run.runNumber)?", isPresented: $confirmAction, titleVisibility: .visible) {
+            Button(action.title, role: action == .cancel ? .destructive : nil) { Task { await performAction() } }
+        } message: { Text("This changes the workflow on GitHub and requires Actions write access.") }
+    }
+
+    private func performAction() async {
+        guard !busy else { return }; busy = true; runError = nil; actionMessage = nil
+        do {
+            try await store.client.controlRun(in: entry.repository, runID: run.id, action: action)
+            actionMessage = "GitHub accepted the request. Pull to refresh its progress."
+        } catch { runError = error.localizedDescription }
+        busy = false
+        if runError == nil { await reload() }
     }
 
     private func reload() async {

@@ -10,21 +10,29 @@ struct ReleaseDetailView: View {
     @State private var hasMore = true
     @State private var busy = false
     @State private var error: String?
+    @State private var detailError: String?
+    @Environment(\.dismiss) private var dismiss
+    @State private var updated: Release?
+    @State private var editing = false
+    @State private var confirmDelete = false
+    @State private var canManage = false
+    private var release: Release { updated ?? entry.release }
 
     var body: some View {
         List {
             Section {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(entry.repository.fullName).font(.caption).foregroundStyle(.secondary)
-                    Text(entry.release.title).font(.title2.bold()).textSelection(.enabled)
+                    Text(release.title).font(.title2.bold()).textSelection(.enabled)
                     HStack {
-                        Label(entry.release.tagName, systemImage: "tag")
-                        if entry.release.prerelease { Text("Pre-release").foregroundStyle(.orange) }
+                        Label(release.tagName, systemImage: "tag")
+                        if release.prerelease { Text("Pre-release").foregroundStyle(.orange) }
                     }.font(.subheadline)
-                    if let date = entry.release.publishedAt {
+                    if let date = release.publishedAt {
                         Text(date, format: .dateTime.day().month().year()).font(.caption).foregroundStyle(.secondary)
                     }
                 }.padding(.vertical, 8)
+                if let detailError { ErrorNotice(message: detailError) }
             }
 
             Section {
@@ -65,22 +73,49 @@ struct ReleaseDetailView: View {
               footer: { Text("Counts are GitHub's cumulative download counts, not unique users. Pull to refresh them. Download a file to save it to Files or share it.") }
 
             Section("Release notes") {
-                if let body = entry.release.body, !body.isEmpty {
-                    Text(body).font(.subheadline).textSelection(.enabled)
+                if let body = release.body, !body.isEmpty {
+                    MarkdownDocumentView(text: body)
                 } else { Text("No release notes provided.").foregroundStyle(.secondary) }
-                Link(destination: entry.release.htmlUrl) { Label("View release on GitHub", systemImage: "arrow.up.right.square") }
+                ShareLink(item: release.htmlUrl)
             }
         }
-        .navigationTitle(entry.release.tagName).navigationBarTitleDisplayMode(.inline)
+        .navigationTitle(release.tagName).navigationBarTitleDisplayMode(.inline)
         .task { store.markRead(entry); await reload() }
+        .toolbar {
+            if store.hasToken && canManage {
+                Menu {
+                    Button("Edit release", systemImage: "square.and.pencil") { editing = true }
+                    Button("Delete release", systemImage: "trash", role: .destructive) { confirmDelete = true }
+                } label: { Image(systemName: "ellipsis") }.disabled(busy).accessibilityLabel("Manage release")
+            }
+        }
+        .sheet(isPresented: $editing) { ReleaseEditor(repository: entry.repository, release: release) { updated = $0 } }
+        .confirmationDialog("Delete release \(release.tagName)?", isPresented: $confirmDelete, titleVisibility: .visible) {
+            Button("Delete release and its assets", role: .destructive) { Task { await delete() } }
+        } message: { Text("This permanently deletes the release and its uploaded files. The Git tag remains in the repository.") }
         .refreshable { await reload() }
     }
 
     private func reload() async {
         guard !busy else { return }
+        busy = true
+        detailError = nil; canManage = false
+        do {
+            updated = try await store.client.get("/repos/\(entry.repository.fullName)/releases/\(release.id)")
+            let settings: RepositorySettings = try await store.client.get("/repos/\(entry.repository.fullName)")
+            canManage = settings.permissions?.push == true || settings.permissions?.admin == true
+        } catch { detailError = error.localizedDescription }
+        busy = false
         page = 0
         hasMore = true
         await loadAssets()
+    }
+
+    private func delete() async {
+        guard !busy, canManage else { return }; busy = true; error = nil
+        defer { busy = false }
+        do { try await store.client.deleteRelease(in: entry.repository, id: release.id); await store.refresh(); dismiss() }
+        catch { self.error = error.localizedDescription }
     }
 
     private func loadAssets() async {
@@ -89,7 +124,7 @@ struct ReleaseDetailView: View {
         error = nil
         defer { busy = false }
         do {
-            let fetched = try await store.client.assets(in: entry.repository, releaseID: entry.release.id, page: page + 1)
+            let fetched = try await store.client.assets(in: entry.repository, releaseID: release.id, page: page + 1)
             if page == 0 { assets = [] }
             assets += fetched.filter { item in !assets.contains(where: { $0.id == item.id }) }
             page += 1

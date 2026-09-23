@@ -12,6 +12,7 @@ enum ConversationKind: String, CaseIterable, Sendable {
 
 enum GitHubRoute: Equatable, Sendable {
     case profile(String)
+    case people(String, PeopleCollection)
     case repositories(RepositoryCollection)
     case organizations
     case actions(Repository)
@@ -37,6 +38,8 @@ enum GitHubRoute: Equatable, Sendable {
             case nil, "overview": self = .profile(owner)
             case "repositories": self = .repositories(.user(owner))
             case "stars": self = .repositories(.stars(owner))
+            case "followers": self = .people(owner, .followers)
+            case "following": self = .people(owner, .following)
             default: return nil
             }
             return

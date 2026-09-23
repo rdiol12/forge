@@ -5,7 +5,7 @@ A native SwiftUI GitHub companion focused on **Actions, releases, and downloadin
 ## Implemented
 
 - Browser sign-in with GitHub using Apple AuthenticationServices, PKCE, state validation, and Keychain. Activation requires the OAuth registration described in Backend/README.md.
-- Read repository code directly in a native, selectable, line-numbered reader. Download files separately for Quick Look previews, sharing, and Save to Files.
+- Read code with syntax colors, line numbers, search, wrapping, and copy; render Markdown headings/lists/code blocks and format JSON. Switch branches in Code, with previews, file downloads and repository ZIPs pinned to the selected revision. Edit README files with a preview and a commit to the selected branch.
 - Browse native Issues, Discussions, and pull requests with search, pagination, descriptions, comments, Discussion replies/accepted answers, pull-request reviews, review comments, and changed-file diffs. Inbox conversation links open these screens.
 - Create branches from a chosen source branch in a native repository form; the default source is loaded from GitHub. Existing branches are never overwritten.
 - Sync notification read state when opening an Inbox item, or swipe to mark it read. Failed writes preserve the unread state.
@@ -18,9 +18,9 @@ A native SwiftUI GitHub companion focused on **Actions, releases, and downloadin
 - Open Actions, Releases, and Downloads from Home shortcuts. Any accessible repository can open Actions and Releases directly, with pagination; Favorites is only required for the combined Home feed.
 - Search real GitHub repositories, page through results, and add them to Favorites.
 - Browse real GitHub Inbox notifications with All/Unread filters and pagination (OAuth or a classic token required).
-- GitHub profile, repository-list, issue, pull-request, Discussion, repository, Actions-list, and Releases-list links resolve to native Forge screens. Remaining web destinations (including Copilot, token creation, and full Actions logs) open in the in-app Safari sheet. Website login remains separate from Forge's API connection; browser cookies are not accessed or reused.
+- GitHub profile, repository-list, issue, pull-request, Discussion, repository, Actions-list, and Releases-list links resolve to native Forge screens. Remaining web destinations (including Copilot and token creation) open in the in-app Safari sheet. Website login remains separate from Forge's API connection; browser cookies are not accessed or reused.
 - See recent Actions runs across repositories, filter failures/active runs, and search by repository, title, or branch.
-- Inspect the current run attempt, jobs, and steps; open full job logs on GitHub.
+- Inspect jobs and steps; search/copy native job logs (first 2 MiB), download full logs, re-run all/failed jobs, and cancel active runs with confirmation. Latest build opens the newest successful run and its retained artifacts, with earlier successful runs selectable.
 - List Actions artifacts, see their size/expiry, and download available artifacts as ZIPs.
 - Follow a release inbox that remembers which releases you have opened.
 - See **GitHub's exact per-file release download counts**, with a total for the assets loaded.
@@ -141,3 +141,9 @@ On 2026-09-23 the authenticated live check read cli/cli code, 30 issues, 30 pull
 The authenticated native check also reads watch state, PR merge settings, review threads, comments, and viewer permissions. Mutations are tested with mocked responses: the check never creates issues, submits reviews, changes subscriptions, marks notifications read, creates branches, or merges a real PR. Add `--forge-build` to verify the private Forge workflow, test steps, artifact download, release IPA, and checksum using the app's API client; files are saved under ignored `dist/api-check-build-<number>/`.
 
 The `--account` live check verified the native profile, 15 owned repositories including private Forge, starred repositories, visible organization memberships, and private workflow runs/jobs/artifacts without Favorites state. It reads credentials from stdin only and makes no writes to GitHub.
+
+## Additional permissions and API references
+
+Actions write is needed for re-runs/cancellation; Issues write for issue changes; Pull requests write for reviews/line comments; Discussions write for replies; Contents write for README commits and release changes; Administration write plus repository admin access for visibility changes. Read-only tokens continue to browse.
+
+References: [GitHub Mobile UI](https://github.com/mobile), [workflow jobs/logs](https://docs.github.com/en/rest/actions/workflow-jobs), [PR line comments](https://docs.github.com/en/rest/pulls/comments), [issue edits](https://docs.github.com/en/rest/issues/issues), [file commits](https://docs.github.com/en/rest/repos/contents), [releases](https://docs.github.com/en/rest/releases/releases), [visibility](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/managing-repository-settings/setting-repository-visibility), [background URLSession](https://developer.apple.com/documentation/foundation/downloading-files-in-the-background).

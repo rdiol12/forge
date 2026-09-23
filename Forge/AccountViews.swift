@@ -1,8 +1,60 @@
 import SwiftUI
 
 @MainActor
+struct PeopleListView: View {
+    let login: String
+    let collection: PeopleCollection
+    @Environment(ForgeStore.self) private var store
+    @State private var people: [GitHubAccount] = []
+    @State private var page = 0
+    @State private var more = false
+    @State private var busy = false
+    @State private var error: String?
+    @State private var search = ""
+    @State private var requestID = UUID()
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(people.filter { search.isEmpty || "\($0.login) \($0.name ?? "")".localizedCaseInsensitiveContains(search) }) { person in
+                    NavigationLink { AccountProfileView(login: person.login) } label: {
+                        HStack(spacing: 12) {
+                            Avatar(login: person.login, size: 44)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(person.name ?? person.login).font(.headline)
+                                if person.name != nil { Text(person.login).font(.subheadline).foregroundStyle(.secondary) }
+                            }
+                        }.padding(.vertical, 4)
+                    }
+                }
+                if busy { ProgressView("Loading people…") }
+                if let error { ErrorNotice(message: error); Button("Retry") { Task { await load(reset: false) } }.disabled(busy) }
+                if people.isEmpty && !busy && error == nil { Text("No \(collection.rawValue) yet.").foregroundStyle(.secondary) }
+                if more && !busy { Button("Load more people") { Task { await load(reset: false) } } }
+            } header: { Text(login).textCase(nil) }
+        }.navigationTitle(collection.title)
+        .searchable(text: $search, prompt: "Filter loaded people")
+        .task(id: store.account) { await load(reset: true) }
+        .refreshable { await load(reset: true) }
+    }
+
+    private func load(reset: Bool) async {
+        if !reset && busy { return }
+        let id = UUID(); requestID = id; busy = true; error = nil
+        if reset { people = []; page = 0; more = false }
+        defer { if requestID == id { busy = false } }
+        do {
+            let result = try await store.client.people(login: login, collection: collection, page: page + 1)
+            guard !Task.isCancelled, requestID == id else { return }
+            people += result.filter { next in !people.contains { $0.id == next.id } }; page += 1; more = result.count == 30
+        } catch { if !Task.isCancelled, requestID == id { self.error = error.localizedDescription } }
+    }
+}
+
+@MainActor
 struct AccountProfileView: View {
     let login: String
+    var rootProfile = false
     @Environment(ForgeStore.self) private var store
     @State private var profile: GitHubAccount?
     @State private var busy = false
@@ -28,7 +80,10 @@ struct AccountProfileView: View {
                 if let company = profile?.company, !company.isEmpty { Label(company, systemImage: "building.2") }
                 if let location = profile?.location, !location.isEmpty { Label(location, systemImage: "mappin.and.ellipse") }
                 if let followers = profile?.followers, let following = profile?.following {
-                    Text("\(followers.formatted()) followers · \(following.formatted()) following").font(.subheadline).foregroundStyle(.secondary)
+                    NavigationLink { PeopleListView(login: login, collection: .followers) } label: {
+                        Label("\(followers.formatted()) followers", systemImage: "person.2")
+                    }.font(.subheadline)
+                    NavigationLink("\(following.formatted()) following") { PeopleListView(login: login, collection: .following) }.font(.subheadline)
                 }
                 if busy { ProgressView("Loading profile…") }
                 if let error {
@@ -38,14 +93,15 @@ struct AccountProfileView: View {
             }
             Section {
                 NavigationLink { AccountRepositoriesView(collection: repositories) } label: { WorkLabel("Repositories", icon: "repo", color: Color(white: 0.28)) }
-                NavigationLink { AccountRepositoriesView(collection: repositories, showsActions: true) } label: { WorkLabel("Actions", icon: "workflow", color: .blue) }
+                if ownProfile { NavigationLink { OwnedActionsView() } label: { WorkLabel("Actions", icon: "workflow", color: .blue) } }
+                else { NavigationLink { AccountRepositoriesView(collection: repositories, showsActions: true) } label: { WorkLabel("Actions", icon: "workflow", color: .blue) } }
                 if profile?.type != "Organization" {
                     NavigationLink { AccountRepositoriesView(collection: ownProfile ? .starred : .stars(login)) } label: { WorkLabel("Starred", icon: "star", color: .orange) }
                     NavigationLink { OrganizationListView(login: ownProfile ? nil : login) } label: { WorkLabel("Organizations", icon: "organization", color: .orange) }
                 }
             }
         }
-        .navigationTitle(login).navigationBarTitleDisplayMode(.inline)
+        .navigationTitle(rootProfile ? "Profile" : login).navigationBarTitleDisplayMode(rootProfile ? .large : .inline)
         .task(id: store.account) { await load() }
         .refreshable { await load() }
     }

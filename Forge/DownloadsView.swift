@@ -25,7 +25,7 @@ struct DownloadsView: View {
                                 VStack(alignment: .leading, spacing: 5) {
                                     Text(entry.specification.name).font(.headline).textSelection(.enabled)
                                     Text(entry.specification.repository).font(.caption).foregroundStyle(.secondary)
-                                    Text(fileSize(entry.specification.size)).font(.caption).foregroundStyle(.secondary)
+                                    if entry.specification.size > 0 { Text(fileSize(entry.specification.size)).font(.caption).foregroundStyle(.secondary) }
                                 }
                             }
                             if entry.active {
@@ -54,7 +54,7 @@ struct DownloadsView: View {
                         }
                     }
                 } footer: {
-                    Text("Keep Forge open until downloads finish. Use Save / share → Save to Files to choose a folder. Saved files remain available offline. Swipe left to delete a local copy.")
+                    Text("Artifacts, release files and repository ZIPs continue downloading in the background. iOS controls transfer timing; force-quitting Forge can interrupt them. Direct repository files may need Forge open. Tap Try again to restart an interrupted transfer. Save / share → Save to Files exports a local copy.")
                 }
             }
         }

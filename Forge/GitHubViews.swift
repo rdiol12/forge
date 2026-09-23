@@ -62,6 +62,7 @@ struct GitHubDestination: View {
     var body: some View {
         switch GitHubRoute(url) {
         case let .profile(login): AccountProfileView(login: login)
+        case let .people(login, collection): PeopleListView(login: login, collection: collection)
         case let .repositories(collection): AccountRepositoriesView(collection: collection)
         case .organizations: OrganizationListView()
         case let .actions(repository): ActionsView(repository: repository)
@@ -207,6 +208,7 @@ struct RepositoryView: View {
             }
             Section {
                 NavigationLink { RepositoryFilesView(repository: repository) } label: { WorkLabel("Code", icon: "repo", color: Color(white: 0.28)) }
+                NavigationLink { ReadmeView(repository: repository) } label: { Label("README", systemImage: "doc.richtext") }
                 NavigationLink { CreateBranchView(repository: repository) } label: { Label("Create branch", systemImage: "arrow.triangle.branch").foregroundStyle(.primary) }
                 NavigationLink { ConversationListView(kind: .issue, repository: repository) } label: { WorkLabel("Issues", icon: "issue-opened", color: .green) }
                 NavigationLink { ConversationListView(kind: .pullRequest, repository: repository) } label: { WorkLabel("Pull Requests", icon: "git-pull-request", color: .blue) }
@@ -214,7 +216,9 @@ struct RepositoryView: View {
             }
             Section {
                 NavigationLink { ActionsView(repository: repository) } label: { WorkLabel("Actions", icon: "workflow", color: .blue) }
+                NavigationLink { LatestBuildView(repository: repository) } label: { Label("Latest successful build", systemImage: "arrow.down.circle") }
                 NavigationLink { ReleasesView(repository: repository) } label: { WorkLabel("Releases", icon: "tag", color: .green) }
+                NavigationLink { RepositorySettingsView(repository: repository) } label: { Label("Repository settings", systemImage: "gearshape") }
             }
         }
         .navigationTitle(repository.name).navigationBarTitleDisplayMode(.inline)
@@ -417,38 +421,25 @@ struct ProfileView: View {
     @Binding var showingSettings: Bool
     @Environment(ForgeStore.self) private var store
     var body: some View {
-        List {
-            Section {
-                HStack(spacing: 16) {
-                    if store.hasToken { Avatar(login: store.account, size: 64) }
-                    else { Image(systemName: "person.crop.circle").font(.system(size: 56)).foregroundStyle(.secondary) }
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(store.hasToken ? store.account : "Welcome to Forge").font(.title2.bold())
-                        Text(store.hasToken ? "GitHub account" : "Connect your GitHub account").font(.subheadline).foregroundStyle(.secondary)
+        Group {
+            if store.hasToken { AccountProfileView(login: store.account, rootProfile: true) }
+            else {
+                List {
+                    Section {
+                        HStack(spacing: 16) {
+                            Image(systemName: "person.crop.circle").font(.system(size: 56)).foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 5) { Text("Welcome to Forge").font(.title2.bold()); Text("Connect your GitHub account").font(.subheadline).foregroundStyle(.secondary) }
+                        }.padding(.vertical, 12)
+                        Button("Connect GitHub") { showingSettings = true }
                     }
-                }.padding(.vertical, 12)
-                if !store.hasToken { Button("Connect GitHub") { showingSettings = true } }
+                    Section {
+                        NavigationLink { FavoritesView() } label: { WorkLabel("Favorites", icon: "star", color: .orange) }
+                        NavigationLink { DownloadsView() } label: { WorkLabel("Downloads", icon: "download", color: .purple) }
+                    }
+                }.navigationTitle("Profile")
             }
-            if store.hasToken {
-                Section {
-                    NavigationLink { AccountProfileView(login: store.account) } label: { WorkLabel("Your profile", icon: "person", color: .blue) }
-                    NavigationLink { AccountRepositoriesView(collection: .owned) } label: { WorkLabel("Repositories", icon: "repo", color: Color(white: 0.28)) }
-                    NavigationLink { AccountRepositoriesView(collection: .owned, showsActions: true) } label: { WorkLabel("Your repository Actions", icon: "workflow", color: .blue) }
-                    NavigationLink { AccountRepositoriesView(collection: .starred) } label: { WorkLabel("Starred", icon: "star", color: .orange) }
-                    NavigationLink { OrganizationListView() } label: { WorkLabel("Organizations", icon: "organization", color: .orange) }
-                }
-            }
-            Section {
-                NavigationLink { FavoritesView() } label: { WorkLabel("Favorites", icon: "star", color: .orange) }
-                NavigationLink { DownloadsView() } label: { WorkLabel("Downloads", icon: "download", color: .purple) }
-                Button { showingSettings = true } label: { Label("Settings", systemImage: "gearshape").foregroundStyle(.primary) }
-            }
-        }
-        .navigationTitle("Profile")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { showingSettings = true } label: { Image(systemName: "gearshape") }.accessibilityLabel("Settings")
-            }
+        }.toolbar {
+            ToolbarItem(placement: .topBarTrailing) { Button { showingSettings = true } label: { Image(systemName: "gearshape") }.accessibilityLabel("Settings") }
         }
     }
 }

@@ -123,9 +123,9 @@ struct GitHubClient: Sendable {
         try await get("/notifications", page: page, count: 50, query: [URLQueryItem(name: "all", value: "true")])
     }
 
-    func runs(in repository: Repository, page: Int = 1) async throws -> [WorkflowRun] {
+    func runs(in repository: Repository, page: Int = 1, status: String? = nil) async throws -> [WorkflowRun] {
         struct Response: Decodable { let workflowRuns: [WorkflowRun] }
-        let response: Response = try await get("/repos/\(repository.fullName)/actions/runs", page: page, count: 30)
+        let response: Response = try await get("/repos/\(repository.fullName)/actions/runs", page: page, count: 30, query: status.map { [URLQueryItem(name: "status", value: $0)] } ?? [])
         return response.workflowRuns
     }
 

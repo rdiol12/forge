@@ -39,10 +39,19 @@ xcrun simctl ui "$device" appearance light
 xcrun simctl launch "$device" app.forge.github --forge-preview-url https://github.com/cli/cli/issues/14512
 sleep 10
 xcrun simctl io "$device" screenshot dist/screenshots/native-issue.png
-for preview in 'native-profile https://github.com/octocat' 'native-repositories https://github.com/octocat?tab=repositories' 'native-actions https://github.com/actions/setup-node/actions'; do
+for preview in 'native-profile https://github.com/octocat' 'native-following https://github.com/octocat?tab=following' 'native-repositories https://github.com/octocat?tab=repositories' 'native-actions https://github.com/actions/setup-node/actions'; do
   read -r name url <<< "$preview"
   xcrun simctl terminate "$device" app.forge.github
   xcrun simctl launch "$device" app.forge.github --forge-preview-url "$url"
   sleep 8
   xcrun simctl io "$device" screenshot "dist/screenshots/$name.png"
 done
+mkdir -p "$data_dir/Documents"
+cp Sources/ForgeCore/Models.swift "$data_dir/Documents/Preview.swift"
+xcrun simctl terminate "$device" app.forge.github
+xcrun simctl launch "$device" app.forge.github --forge-preview-code "$data_dir/Documents/Preview.swift"
+sleep 3
+xcrun simctl io "$device" screenshot dist/screenshots/code-light.png
+xcrun simctl ui "$device" appearance dark
+sleep 2
+xcrun simctl io "$device" screenshot dist/screenshots/code-dark.png

@@ -59,7 +59,7 @@ struct GitReference: Decodable, Sendable {
 }
 
 extension GitHubClient {
-    private func mutationData(_ path: String, method: String = "POST", body: [String: Any]) async throws -> Data {
+    func mutationData(_ path: String, method: String = "POST", body: [String: Any]) async throws -> Data {
         guard !token.isEmpty else { throw GitHubError("Connect GitHub in Settings before making changes.") }
         var request = try request(path)
         request.httpMethod = method
@@ -101,7 +101,7 @@ extension GitHubClient {
         return created
     }
 
-    private func validatePullRevision(number: Int, sha: String) throws {
+    func validatePullRevision(number: Int, sha: String) throws {
         guard number > 0, sha.range(of: #"^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$"#, options: .regularExpression) != nil else {
             throw GitHubError("Refresh the pull request to load its current commit before continuing.")
         }
