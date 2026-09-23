@@ -7,7 +7,7 @@ import UIKit
 @MainActor
 final class GitHubSignIn: NSObject, ASWebAuthenticationPresentationContextProviding {
     private var browser: ASWebAuthenticationSession?
-    private let backend = URL(string: "https://forge-github-signin.wry-eft-9054.chatgpt.site")!
+    private let backend = URL(string: "https://forge-github-signin.j239pt2mgegnt9dxw7.chatgpt.site")!
     private let network = URLSession(configuration: .ephemeral, delegate: LoginRedirectPolicy(), delegateQueue: nil)
 
     func signIn() async throws -> String {
