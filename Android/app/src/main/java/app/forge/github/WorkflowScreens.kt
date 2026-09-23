@@ -124,10 +124,13 @@ fun runStatus(run: JSONObject) = run.s("conclusion").ifBlank { run.s("status") }
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(entry.spec.name, fontWeight = FontWeight.Medium); Text(entry.status, style = MaterialTheme.typography.bodySmall)
                 if (entry.active) { entry.progress?.let { LinearProgressIndicator(progress = { it }, modifier = Modifier.fillMaxWidth()) } ?: LinearProgressIndicator(Modifier.fillMaxWidth()); TextButton(onClick = { state.downloads.cancel(entry) }) { Text("Cancel") } }
-                else if (entry.status == "Saved") Row {
+                else if (entry.status == "Saved" && runCatching { state.downloads.file(entry) }.isSuccess) Row {
                     TextButton(onClick = { state.task { state.downloads.file(entry); saving = entry; export.launch(entry.spec.name) } }) { Text("Save as…") }
                     TextButton(onClick = { state.task { state.downloads.share(entry) } }) { Text("Share") }
-                } else TextButton(onClick = { state.task { state.downloads.retry(state.api, entry) } }) { Text("Try again") }
+                } else {
+                    if (entry.status == "Saved") Note("The local file was removed. Download it again to save or share it.")
+                    TextButton(onClick = { state.task { state.downloads.retry(state.api, entry) } }) { Text("Try again") }
+                }
             }
         } }
         Note("Archives and release assets continue through Android's download manager. Direct API files need Forge running. Try again starts a fresh request if a signed download URL expires.")

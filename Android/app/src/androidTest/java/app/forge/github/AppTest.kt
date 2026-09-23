@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -81,6 +82,26 @@ class AppTest {
             assertEquals(secret, Vault(context).read("test"))
             assertFalse(context.getSharedPreferences("credentials", 0).getString("test", "")!!.contains(secret))
         } finally { Vault(context).save("test", "") }
+    }
+
+    @Test fun editorDraftSurvivesScreenRecreation() {
+        val state = state(); val show = mutableStateOf(true); val revision = mutableStateOf("original")
+        var submittedRevision = ""
+        compose.setContent { ForgeTheme { CompositionLocalProvider(LocalForge provides state) {
+            val expectedRevision = revision.value
+            if (show.value) EditDialog("New issue", listOf(Field("Title")), dismiss = { show.value = false }) { submittedRevision = expectedRevision }
+        } } }
+        compose.onNodeWithText("Title").performTextInput("Keep this draft")
+        compose.runOnIdle { show.value = false; revision.value = "changed" }; compose.waitForIdle()
+        compose.runOnIdle { show.value = true }; compose.waitForIdle()
+        compose.onNodeWithText("Keep this draft").assertIsDisplayed()
+        compose.onNodeWithText("Save").performClick(); compose.waitForIdle()
+        compose.runOnIdle { assertEquals("original", submittedRevision); assertTrue(state.drafts.isEmpty()); show.value = true }
+        compose.onNodeWithText("Title").performTextInput("Unsaved change")
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithText("Discard changes?").assertIsDisplayed()
+        compose.onNodeWithText("Discard", useUnmergedTree = true).performClick()
+        compose.runOnIdle { assertTrue(state.drafts.isEmpty()) }
     }
 
     @Test fun privateRepositoryWorkflowsReleasesAndPinnedCodeAreReadable() = runBlocking {

@@ -32,6 +32,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
+          cache-dependency-path: |
+            Android/**/*.gradle.kts
+            Android/gradle/wrapper/gradle-wrapper.properties
 
       - name: Set up Android command-line tools
         uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
@@ -71,10 +75,12 @@ jobs:
           working-directory: Android
           script: |
             adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb install -t -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
             adb shell run-as app.forge.github.debug mkdir -p files
             printf '%s' "$GH_TOKEN" | adb shell run-as app.forge.github.debug tee files/live-token > /dev/null
-            ./gradlew --no-daemon connectedDebugAndroidTest --console=plain
             mkdir -p ../dist/android-screenshots
+            adb shell am instrument -w -r app.forge.github.debug.test/androidx.test.runner.AndroidJUnitRunner | tee ../dist/android-screenshots/instrumentation.txt
+            grep -Eq '^OK \([1-9][0-9]* tests?\)' ../dist/android-screenshots/instrumentation.txt
             adb pull /sdcard/Android/data/app.forge.github.debug/files/screenshots/. ../dist/android-screenshots/
             adb shell run-as app.forge.github.debug rm files/live-token
             adb install -r app/build/outputs/apk/release/app-release.apk

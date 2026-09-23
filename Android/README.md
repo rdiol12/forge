@@ -18,7 +18,7 @@ Signing material is stored only in GitHub Actions secrets (`ANDROID_KEYSTORE`, `
 
 ## Features
 
-- Home, Inbox, Explore, Profile; GitHub-style grouped rows, Octicons, native back navigation, light/dark appearance.
+- Home, Inbox, Explore, Profile; GitHub-style grouped rows, Octicons, native back navigation with separate tab histories, light/dark appearance.
 - Native profiles, followers/following, repositories (including accessible private ones), stars, organizations and favorites.
 - Owned-repository Actions dashboard, full paged run history, successful builds, test steps, searchable/copyable job logs, rerun/cancel confirmations, artifact downloads.
 - Releases with GitHub's per-asset download counts; native notes, edit name/notes/pre-release status, confirmed deletion without deleting the tag.
@@ -43,6 +43,10 @@ Actions artifact counts are unavailable from GitHub and are never invented. Expi
 
 Code previews support UTF-8 up to 1 MiB, and logs preview the first 2 MiB. Syntax colors use lexical matching. Markdown supports headings, paragraphs, lists, quotes, inline formatting/links and fenced code; tables, images and embedded HTML are not fully rendered. Very long generated lines can exceed the horizontal canvas; Wrap and Copy preserve access to the full text. Direct API-file downloads need the process running; archive transfers use DownloadManager. Retry starts a fresh request rather than implementing custom byte-range resume.
 
+Editor drafts and in-flight saves survive screen rotation in the ViewModel, including their original revision checks. Drafts are not persisted after process termination.
+
 Unit tests exercise URL/redirect boundaries, PKCE callbacks, immutable edit/merge payloads, branch validation, native routes, diff coordinates and text preservation. Emulator tests cover navigation, light/dark UI, code search/wrapping/copy, native people routing, real Android Keystore persistence, and read-only private GitHub API/download integration. Mutations are never sent to real repositories as tests. Screenshot people/code fixtures live only in the test APK; the installed app starts empty and displays real data.
 
 Third-party notices are bundled in the app and accessible from Settings.
+
+On 2026-09-23, the first complete emulator pass ran all six original instrumentation tests without skips or failures, including real private release and Actions-artifact downloads. Its screenshot export then exposed Gradle uninstalling the test app; the workflow now executes the built test APK directly and collects screenshots before cleanup.

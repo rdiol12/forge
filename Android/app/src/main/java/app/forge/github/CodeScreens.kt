@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -25,7 +26,7 @@ import org.json.JSONObject
 private data class Tree(val branch: String, val sha: String, val path: String, val content: Any)
 
 @Composable fun FilesScreen(page: Page) {
-    val state = LocalForge.current; var selected by remember { mutableStateOf("") }; var picker by remember { mutableStateOf(false) }; var search by remember { mutableStateOf("") }
+    val state = LocalForge.current; var selected by rememberSaveable { mutableStateOf("") }; var picker by rememberSaveable { mutableStateOf(false) }; var search by rememberSaveable { mutableStateOf("") }
     Column(Modifier.fillMaxSize()) {
         Loaded(page to selected, load = {
             val api = state.api; val repo = repository(page.repo)
@@ -85,8 +86,8 @@ private data class Tree(val branch: String, val sha: String, val path: String, v
 }
 
 @Composable fun FileScreen(page: Page) {
-    val state = LocalForge.current; var edit by remember { mutableStateOf(false) }; var preview by remember { mutableStateOf(page.title.endsWith(".md", true) || page.title.startsWith("README", true)) }
-    var savedText by remember { mutableStateOf<String?>(null) }; var sha by remember { mutableStateOf(page.sha) }
+    val state = LocalForge.current; var edit by rememberSaveable { mutableStateOf(false) }; var preview by rememberSaveable { mutableStateOf(page.title.endsWith(".md", true) || page.title.startsWith("README", true)) }
+    var savedText by remember(page.sha) { mutableStateOf<String?>(null) }; var sha by remember(page.sha) { mutableStateOf(page.sha) }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             DownloadButton(DownloadSpec("/repos/${repository(page.repo)}/git/blobs/$sha", page.title, "application/vnd.github.raw+json"))
@@ -105,6 +106,7 @@ private data class Tree(val branch: String, val sha: String, val path: String, v
                 val result = state.api.change("/repos/${page.repo}/contents/${page.arg}", "PUT", fileEdit(sha, page.branch, values[0], values[1]))
                 val next = result.o("content").s("sha"); require(validSha(next)) { "GitHub did not confirm the file revision. Refresh before retrying." }
                 savedText = values[0]; sha = next
+                if (state.stack.lastOrNull() == page) state.stack[state.stack.lastIndex] = page.copy(sha = next)
             }
         }
     }

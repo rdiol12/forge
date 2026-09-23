@@ -4,6 +4,7 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -12,7 +13,7 @@ import androidx.compose.ui.unit.dp
 import org.json.JSONObject
 
 @Composable fun RepositoryScreen(repo: String) {
-    val state = LocalForge.current; val context = LocalContext.current; var branchDialog by remember { mutableStateOf(false) }
+    val state = LocalForge.current; val context = LocalContext.current; var branchDialog by rememberSaveable { mutableStateOf(false) }
     Screen { Loaded(repo, load = { state.api.obj("/repos/${repository(repo)}") }) { info ->
         Group {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -46,7 +47,7 @@ import org.json.JSONObject
 }
 
 @Composable fun RepositorySettings(repo: String) {
-    val state = LocalForge.current; var confirm by remember { mutableStateOf(false) }
+    val state = LocalForge.current; var confirm by rememberSaveable { mutableStateOf(false) }
     Screen { Loaded(repo, load = { state.api.obj("/repos/${repository(repo)}") }) { info ->
         Group("Visibility") {
             Note("$repo is ${info.s("visibility")}.")
@@ -81,7 +82,7 @@ import org.json.JSONObject
 }
 
 @Composable fun ReleaseScreen(page: Page) {
-    val state = LocalForge.current; var edit by remember { mutableStateOf(false) }; var delete by remember { mutableStateOf(false) }
+    val state = LocalForge.current; var edit by rememberSaveable { mutableStateOf(false) }; var delete by rememberSaveable { mutableStateOf(false) }
     val path = "/repos/${repository(page.repo)}/releases/${positiveID(page.id)}"
     Screen { Loaded(page, load = { state.api.obj(path) to state.api.obj("/repos/${page.repo}") }) { (release, repo) ->
         Text(release.s("name").ifBlank { release.s("tag_name") }, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)

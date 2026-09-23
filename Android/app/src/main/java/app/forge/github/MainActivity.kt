@@ -136,23 +136,28 @@ fun Modifier.semanticsLabel(label: String) = this.then(Modifier.semantics { cont
 
 data class Field(val label: String, val initial: String = "", val multiline: Boolean = false)
 @Composable fun EditDialog(title: String, fields: List<Field>, explanation: String = "", confirm: String = "Save", required: String? = null, dismiss: () -> Unit, save: suspend (List<String>) -> Unit) {
-    val scope = rememberCoroutineScope(); val state = LocalForge.current
-    val values = remember { mutableStateListOf<String>().apply { addAll(fields.map { it.initial }) } }
-    var typed by remember { mutableStateOf("") }; var busy by remember { mutableStateOf(false) }; var error by remember { mutableStateOf<String?>(null) }; var discard by remember { mutableStateOf(false) }
-    fun close() { if (!busy) { if (values.toList() != fields.map { it.initial }) discard = true else dismiss() } }
+    val state = LocalForge.current
+    val key = "${state.generation}:${state.tab}:${state.stack.lastOrNull()}:$title"
+    // Keep large drafts and in-flight saves in the ViewModel, never in Android's size-limited saved-state Bundle.
+    val draft = remember(key) { state.drafts.getOrPut(key) { EditorDraft(fields.map { it.initial }, explanation, save) } }
+    val values = draft.values; val busy = draft.busy; val error = draft.error
+    var typed by remember { mutableStateOf("") }; var discard by remember { mutableStateOf(false) }
+    fun dismissDraft() { state.drafts.remove(key); dismiss() }
+    if (draft.saved) { LaunchedEffect(key) { dismiss() }; return }
+    fun close() { if (!busy) { if (values.toList() != draft.initial) discard = true else dismissDraft() } }
     AlertDialog(onDismissRequest = ::close, title = { Text(title) }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (explanation.isNotBlank()) Text(explanation)
+            if (draft.explanation.isNotBlank()) Text(draft.explanation)
             fields.forEachIndexed { i, field -> OutlinedTextField(values[i], { values[i] = it }, label = { Text(field.label) }, singleLine = !field.multiline, minLines = if (field.multiline) 4 else 1, maxLines = if (field.multiline) 10 else 1, enabled = !busy, modifier = Modifier.fillMaxWidth()) }
             if (required != null) OutlinedTextField(typed, { typed = it }, label = { Text("Type $required") }, enabled = !busy)
             if (busy) Loading(); error?.let { ErrorText(it) }
         }
     }, confirmButton = { TextButton(enabled = !busy && (required == null || typed == required), onClick = {
-        scope.launch { busy = true; error = null
-            try { save(values.toList()); state.refresh++; dismiss() } catch (e: CancellationException) { throw e } catch (e: Exception) { error = e.message ?: "Could not confirm the change." } finally { busy = false }
+        state.task { draft.busy = true; draft.error = null
+            try { draft.save(values.toList()); state.drafts.remove(key); state.refresh++; draft.saved = true } catch (e: CancellationException) { throw e } catch (e: Exception) { draft.error = e.message ?: "Could not confirm the change." } finally { draft.busy = false }
         }
     }) { Text(confirm) } }, dismissButton = { TextButton(onClick = ::close, enabled = !busy) { Text("Cancel") } })
-    if (discard) AlertDialog(onDismissRequest = { discard = false }, title = { Text("Discard changes?") }, text = { Text("Your draft has not been saved.") }, confirmButton = { TextButton(onClick = dismiss) { Text("Discard") } }, dismissButton = { TextButton(onClick = { discard = false }) { Text("Keep editing") } })
+    if (discard) AlertDialog(onDismissRequest = { discard = false }, title = { Text("Discard changes?") }, text = { Text("Your draft has not been saved.") }, confirmButton = { TextButton(onClick = ::dismissDraft) { Text("Discard") } }, dismissButton = { TextButton(onClick = { discard = false }) { Text("Keep editing") } })
 }
 
 @Composable fun Destination(page: Page) {

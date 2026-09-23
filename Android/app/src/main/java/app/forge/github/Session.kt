@@ -50,14 +50,21 @@ class Vault(context: Context) {
 
 data class Page(val kind: String, val title: String, val repo: String = "", val id: String = "", val arg: String = "", val sha: String = "", val branch: String = "")
 
+class EditorDraft(val initial: List<String>, val explanation: String, val save: suspend (List<String>) -> Unit) {
+    val values = mutableStateListOf<String>().apply { addAll(initial) }
+    var busy by mutableStateOf(false)
+    var error by mutableStateOf<String?>(null)
+    var saved by mutableStateOf(false)
+}
+
 class ForgeState(application: Application) : AndroidViewModel(application) {
     private val vault = Vault(application)
     val prefs = application.getSharedPreferences("forge", Context.MODE_PRIVATE)
-    private var token by mutableStateOf(vault.read("token"))
+    private var session by mutableStateOf(runCatching { JSONObject(vault.read("session")) }.getOrDefault(JSONObject()))
+    private val token get() = session.s("token")
     val connected get() = token.isNotBlank()
     val api get() = GitHub(token)
-    var account by mutableStateOf(if (connected) prefs.getString("account", "").orEmpty() else "")
-        private set
+    val account get() = if (connected) session.s("account") else ""
     var generation by mutableIntStateOf(0)
         private set
     var refresh by mutableIntStateOf(0)
@@ -65,13 +72,15 @@ class ForgeState(application: Application) : AndroidViewModel(application) {
     var notice by mutableStateOf<String?>(null)
     var signingIn by mutableStateOf(false)
     var showCopilot by mutableStateOf(prefs.getBoolean("copilot", true))
-    val stack = mutableStateListOf<Page>()
+    private val stacks = List(4) { mutableStateListOf<Page>() }
+    val stack get() = stacks[tab]
+    val drafts = mutableMapOf<String, EditorDraft>()
     val favorites = mutableStateListOf<String>().apply { addAll(runCatching { JSONArray(prefs.getString("favorites", "[]")).let { a -> (0 until a.length()).map { repository(a.getString(it)) } } }.getOrDefault(emptyList())) }
     val downloads = Downloads(application)
 
     fun open(page: Page) { stack.add(page) }
     fun back() { if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex) }
-    fun chooseTab(value: Int) { tab = value; stack.clear() }
+    fun chooseTab(value: Int) { if (tab == value) stack.clear() else tab = value }
     fun favorite(repo: String) {
         val valid = repository(repo)
         if (favorites.contains(valid)) favorites.remove(valid) else favorites.add(valid)
@@ -83,13 +92,15 @@ class ForgeState(application: Application) : AndroidViewModel(application) {
     suspend fun connect(value: String) {
         require(value.trim().isNotEmpty() && !value.any { it == '\n' || it == '\r' }) { "Enter a GitHub access token." }
         val candidate = value.trim(); val login = GitHub(candidate).obj("/user").getString("login")
-        downloads.cancelAll(); vault.save("token", candidate); vault.save("oauth", "")
-        token = candidate; account = login; generation++; stack.clear()
-        prefs.edit().putString("account", login).apply(); notice = "Connected as $login"
+        downloads.cancelAll(); vault.save("oauth", "")
+        val next = json("token" to candidate, "account" to login)
+        vault.save("session", next.toString())
+        session = next; generation++; stacks.forEach { it.clear() }; drafts.clear()
+        notice = "Connected as $login"
     }
     fun disconnect() {
-        downloads.cancelAll(); vault.save("token", ""); vault.save("oauth", "")
-        token = ""; account = ""; generation++; stack.clear(); prefs.edit().remove("account").apply()
+        downloads.cancelAll(); vault.save("session", ""); vault.save("oauth", "")
+        session = JSONObject(); generation++; stacks.forEach { it.clear() }; drafts.clear()
     }
 
     suspend fun startLogin(context: Context) {

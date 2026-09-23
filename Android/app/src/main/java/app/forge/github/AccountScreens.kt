@@ -4,8 +4,10 @@ import android.graphics.BitmapFactory
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -14,6 +16,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -49,7 +52,7 @@ import java.net.URI
 @Composable fun Settings() {
     val state = LocalForge.current; val context = LocalContext.current; val scope = rememberCoroutineScope()
     var token by remember { mutableStateOf("") }; var busy by remember { mutableStateOf(false) }; var error by remember { mutableStateOf<String?>(null) }
-    var disconnect by remember { mutableStateOf(false) }
+    var disconnect by rememberSaveable { mutableStateOf(false) }
     Screen {
         Group("GitHub account") {
             if (state.connected) {
@@ -61,7 +64,7 @@ import java.net.URI
             }
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Personal access token", style = MaterialTheme.typography.titleSmall)
-                OutlinedTextField(token, { token = it }, label = { Text("GitHub token") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), enabled = !busy, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(token, { token = it }, label = { Text("GitHub token") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false), enabled = !busy, modifier = Modifier.fillMaxWidth())
                 Button(enabled = token.isNotBlank() && !busy, onClick = { busy = true; error = null; state.task { try { state.connect(token); token = "" } catch (e: Exception) { error = e.message } finally { busy = false } } }) { Text(if (busy) "Connecting…" else "Connect token") }
                 error?.let { ErrorText(it) }
                 TextButton(onClick = { state.link(context, "https://github.com/settings/tokens/new") }) { Text("Create a GitHub token") }

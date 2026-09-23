@@ -4,6 +4,7 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
@@ -27,7 +28,7 @@ private const val COMMENT = "node_id:id body user:author{login} created_at:creat
 }
 
 @Composable fun Conversations(page: Page) {
-    val state = LocalForge.current; var search by remember { mutableStateOf("") }; var query by remember { mutableStateOf("") }; var status by remember { mutableStateOf("open") }; var create by remember { mutableStateOf(false) }
+    val state = LocalForge.current; var search by remember { mutableStateOf("") }; var query by remember { mutableStateOf("") }; var status by remember { mutableStateOf("open") }; var create by rememberSaveable { mutableStateOf(false) }
     val kind = page.arg
     Screen {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -66,7 +67,7 @@ private const val COMMENT = "node_id:id body user:author{login} created_at:creat
 private fun discussionVariables(page: Page, cursor: String? = null) = json("owner" to repository(page.repo).substringBefore('/'), "name" to page.repo.substringAfter('/'), "number" to positiveID(page.id).toInt(), "cursor" to cursor)
 
 @Composable fun ConversationScreen(page: Page) {
-    val state = LocalForge.current; var comment by remember { mutableStateOf(false) }; var edit by remember { mutableStateOf(false) }; var review by remember { mutableStateOf<String?>(null) }; var merge by remember { mutableStateOf<String?>(null) }
+    val state = LocalForge.current; var comment by rememberSaveable { mutableStateOf(false) }; var edit by rememberSaveable { mutableStateOf(false) }; var review by rememberSaveable { mutableStateOf<String?>(null) }; var merge by rememberSaveable { mutableStateOf<String?>(null) }
     val repoPath = "/repos/${repository(page.repo)}"; val number = positiveID(page.id)
     Screen { Loaded(page, load = {
         val item = if (page.kind == "discussion") state.api.gql("query(\$owner:String!,\$name:String!,\$number:Int!){repository(owner:\$owner,name:\$name){discussion(number:\$number){$DISCUSSION}}}", discussionVariables(page)).o("repository").getJSONObject("discussion")
@@ -144,7 +145,7 @@ private fun discussionVariables(page: Page, cursor: String? = null) = json("owne
 }
 
 @Composable fun WatchControl(id: String) {
-    val state = LocalForge.current; var confirm by remember { mutableStateOf(false) }
+    val state = LocalForge.current; var confirm by rememberSaveable { mutableStateOf(false) }
     Loaded("watch-$id", load = { state.api.gql("query(\$id:ID!){node(id:\$id){... on Subscribable{viewerSubscription}}}", json("id" to id)).o("node").s("viewerSubscription") }) { subscription ->
         if (subscription in listOf("SUBSCRIBED", "UNSUBSCRIBED", "IGNORED")) TextButton(onClick = { confirm = true }) { Text(if (subscription == "SUBSCRIBED") "Unwatch conversation" else "Watch conversation") }
         if (confirm) EditDialog(if (subscription == "SUBSCRIBED") "Unwatch conversation?" else "Watch conversation?", emptyList(), "Change your GitHub notification subscription for this conversation.", "Confirm", dismiss = { confirm = false }) {
@@ -162,7 +163,7 @@ suspend fun discussionReply(api: GitHub, discussion: String, parent: String?, bo
 }
 
 @Composable fun DiscussionReplies(page: Page) {
-    val state = LocalForge.current; var reply by remember { mutableStateOf(false) }
+    val state = LocalForge.current; var reply by rememberSaveable { mutableStateOf(false) }
     Screen {
         if (state.connected) OutlinedButton(onClick = { reply = true }) { Text("Reply") }
         Group { GraphPages(page.id, load = { cursor -> state.api.gql("query(\$id:ID!,\$cursor:String){node(id:\$id){... on DiscussionComment{replies(first:30,after:\$cursor){nodes{$COMMENT}pageInfo{hasNextPage endCursor}}}}}", json("id" to page.id, "cursor" to cursor)).o("node").o("replies") }) { CommentCard(it, if (it.optBoolean("isAnswer")) "Accepted answer" else "") } }
@@ -171,7 +172,7 @@ suspend fun discussionReply(api: GitHub, discussion: String, parent: String?, bo
 }
 
 @Composable fun PullFiles(page: Page) {
-    val state = LocalForge.current; var lineComment by remember { mutableStateOf<Pair<JSONObject, DiffLine>?>(null) }; var revision by remember { mutableStateOf(page.sha) }
+    val state = LocalForge.current; var lineComment by rememberSaveable { mutableStateOf<String?>(null) }; var revision by remember { mutableStateOf(page.sha) }
     Screen {
         Note("Tap + beside a line to add an inline review comment. Diff comments are pinned to the displayed commit.")
         Group { Paged(page, load = { number ->
@@ -186,15 +187,15 @@ suspend fun discussionReply(api: GitHub, discussion: String, parent: String?, bo
             if (file.s("patch").isBlank()) Note("GitHub omitted this binary or large diff.")
             else Column(Modifier.horizontalScroll(rememberScrollState())) { diffLines(file.s("patch")).forEach { line ->
                 Row(Modifier.background(when { line.text.startsWith('+') -> Color(0x222DA44E); line.text.startsWith('-') -> Color(0x22CF222E); else -> Color.Transparent }).padding(horizontal = 6.dp)) {
-                    if (state.connected && line.side != null) TextButton(onClick = { lineComment = file to line }, contentPadding = PaddingValues(4.dp), modifier = Modifier.width(40.dp).height(34.dp)) { Text("+") } else Spacer(Modifier.width(40.dp))
+                    if (state.connected && line.side != null) TextButton(onClick = { lineComment = json("path" to file.s("filename"), "line" to line.number, "side" to line.side, "sha" to revision).toString() }, contentPadding = PaddingValues(4.dp), modifier = Modifier.width(40.dp).height(34.dp)) { Text("+") } else Spacer(Modifier.width(40.dp))
                     Text("${line.old ?: ""}".padStart(4) + " " + "${line.new ?: ""}".padStart(4) + "  " + line.text, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
                 }
             } }
         } }
     }
-    lineComment?.let { (file, line) -> EditDialog("Comment on line ${line.number}", listOf(Field("Comment", multiline = true)), "${file.s("filename")} · ${line.side}\nCommit ${revision.take(12)}", "Post comment", dismiss = { lineComment = null }) { values ->
-        require(values[0].isNotBlank() && validSha(revision) && safePath(file.s("filename")))
-        state.api.change("/repos/${page.repo}/pulls/${page.id}/comments", body = json("body" to values[0], "commit_id" to revision, "path" to file.s("filename"), "line" to line.number, "side" to line.side))
+    lineComment?.let { saved -> val line = JSONObject(saved); EditDialog("Comment on line ${line.getInt("line")}", listOf(Field("Comment", multiline = true)), "${line.s("path")} · ${line.s("side")}\nCommit ${line.s("sha").take(12)}", "Post comment", dismiss = { lineComment = null }) { values ->
+        require(values[0].isNotBlank() && validSha(line.s("sha")) && safePath(line.s("path")))
+        state.api.change("/repos/${page.repo}/pulls/${page.id}/comments", body = json("body" to values[0], "commit_id" to line.s("sha"), "path" to line.s("path"), "line" to line.getInt("line"), "side" to line.s("side")))
     } }
 }
 
@@ -206,7 +207,7 @@ suspend fun discussionReply(api: GitHub, discussion: String, parent: String?, bo
 }
 
 @Composable fun ReviewThreadScreen(page: Page) {
-    val state = LocalForge.current; var confirm by remember { mutableStateOf(false) }
+    val state = LocalForge.current; var confirm by rememberSaveable { mutableStateOf(false) }
     Screen { Loaded(page, load = { state.api.gql("query(\$id:ID!){node(id:\$id){... on PullRequestReviewThread{isResolved viewerCanResolve viewerCanUnresolve}}}", json("id" to page.id)).getJSONObject("node") }) { thread ->
         val resolved = thread.optBoolean("isResolved")
         Text(if (resolved) "Resolved" else "Unresolved", style = MaterialTheme.typography.titleMedium)
