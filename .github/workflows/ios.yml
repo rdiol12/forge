@@ -113,8 +113,8 @@ jobs:
             --notes-file "$RUNNER_TEMP/release-notes.md" \
             --draft --prerelease="$prerelease"
           gh release upload "$tag" dist/Forge-unsigned.ipa dist/SHA256SUMS --repo "$GITHUB_REPOSITORY"
-          release_id=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" --jq .id)
-          assets=$(gh api "repos/$GITHUB_REPOSITORY/releases/$release_id/assets" --jq '[.[] | select(.state == "uploaded" and .size > 0) | .name] | sort | join(",")')
+          release_api=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json apiUrl --jq .apiUrl)
+          assets=$(gh api "$release_api/assets" --jq '[.[] | select(.state == "uploaded" and .size > 0) | .name] | sort | join(",")')
           test "$assets" = 'Forge-unsigned.ipa,SHA256SUMS'
           gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease="$prerelease"
           release_url=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url --jq .url)
