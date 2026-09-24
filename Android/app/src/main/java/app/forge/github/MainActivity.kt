@@ -51,17 +51,28 @@ val LocalForge = staticCompositionLocalOf<ForgeState> { error("Missing Forge sta
         val titles = listOf("Home", "Inbox", "Explore", "Profile")
         val icons = listOf(R.drawable.ic_home, R.drawable.ic_inbox, R.drawable.ic_telescope, R.drawable.ic_person)
         val page = state.stack.lastOrNull()
+        var homeMenu by remember { mutableStateOf(false) }
         val snack = remember { SnackbarHostState() }
         LaunchedEffect(state.notice) { state.notice?.let { snack.showSnackbar(it); state.notice = null } }
         BackHandler(page != null) { state.back() }
         Scaffold(
-            topBar = { TopAppBar(title = { Text(page?.title ?: titles[state.tab], maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold) },
+            topBar = { if (page?.kind != "newIssue") TopAppBar(title = { Text(page?.title ?: titles[state.tab], maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold) },
                 navigationIcon = { if (page != null) TextButton(onClick = state::back, modifier = Modifier.semanticsLabel("Back")) { Text("‹", style = MaterialTheme.typography.headlineLarge) } },
                 actions = {
                     IconButton(onClick = { state.refresh++ }) { Text("↻", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semanticsLabel("Refresh")) }
-                    if (page?.kind != "settings") TextButton(onClick = { state.open(Page("settings", "Settings")) }) { Text("Settings") }
+                    if (page == null && state.tab == 0) {
+                        Box {
+                            IconButton(onClick = { homeMenu = true }, modifier = Modifier.semanticsLabel("Create or add")) { Text("+", style = MaterialTheme.typography.headlineMedium) }
+                            DropdownMenu(homeMenu, { homeMenu = false }) {
+                                DropdownMenuItem(text = { Text("New issue") }, enabled = state.connected, onClick = { homeMenu = false; state.open(Page("issueRepo", "New issue")) })
+                                DropdownMenuItem(text = { Text("Add favorite") }, onClick = { homeMenu = false; state.chooseTab(2) })
+                                DropdownMenuItem(text = { Text("Settings") }, onClick = { homeMenu = false; state.open(Page("settings", "Settings")) })
+                            }
+                        }
+                        IconButton(onClick = { state.chooseTab(3) }, modifier = Modifier.semanticsLabel("Your profile")) { Avatar(state.account, 28) }
+                    } else if (page?.kind != "settings") TextButton(onClick = { state.open(Page("settings", "Settings")) }) { Text("Settings") }
                 }) },
-            bottomBar = { NavigationBar(containerColor = MaterialTheme.colorScheme.surface) { titles.forEachIndexed { index, title ->
+            bottomBar = { if (page?.kind != "newIssue") NavigationBar(containerColor = MaterialTheme.colorScheme.surface) { titles.forEachIndexed { index, title ->
                 NavigationBarItem(selected = state.tab == index, onClick = { state.chooseTab(index) }, icon = { Icon(painterResource(icons[index]), title, Modifier.size(24.dp)) }, label = { Text(title) })
             } } }, snackbarHost = { SnackbarHost(snack) }
         ) { padding ->
@@ -112,7 +123,7 @@ fun Modifier.semanticsLabel(label: String) = this.then(Modifier.semantics { cont
     value?.let { content(it) }
 }
 
-@Composable fun Paged(id: Any = Unit, load: suspend (Int) -> List<JSONObject>, row: @Composable (JSONObject) -> Unit) {
+@Composable fun Paged(id: Any = Unit, order: Comparator<JSONObject>? = null, load: suspend (Int) -> List<JSONObject>, row: @Composable (JSONObject) -> Unit) {
     val state = LocalForge.current; val scope = rememberCoroutineScope()
     var rows by remember(id) { mutableStateOf(emptyList<JSONObject>()) }; var page by remember(id) { mutableIntStateOf(0) }
     var more by remember(id) { mutableStateOf(false) }; var busy by remember(id) { mutableStateOf(false) }; var error by remember(id) { mutableStateOf<String?>(null) }
@@ -121,6 +132,7 @@ fun Modifier.semanticsLabel(label: String) = this.then(Modifier.semantics { cont
         try {
             val next = if (reset) 1 else page + 1; val result = load(next)
             rows = (if (reset) result else rows + result).distinctBy { it.s("id").ifBlank { it.s("node_id").ifBlank { it.toString() } } }
+            order?.let { rows = rows.sortedWith(it) }
             page = next; more = result.size == 30
         } catch (e: CancellationException) { throw e } catch (e: Exception) { error = e.message ?: "Could not load this page." } finally { busy = false }
     }
@@ -134,7 +146,7 @@ fun Modifier.semanticsLabel(label: String) = this.then(Modifier.semantics { cont
     }
 }
 
-data class Field(val label: String, val initial: String = "", val multiline: Boolean = false)
+data class Field(val label: String, val initial: String = "", val multiline: Boolean = false, val toggle: Boolean = false)
 @Composable fun EditDialog(title: String, fields: List<Field>, explanation: String = "", confirm: String = "Save", required: String? = null, dismiss: () -> Unit, save: suspend (List<String>) -> Unit) {
     val state = LocalForge.current
     val key = "${state.generation}:${state.tab}:${state.stack.lastOrNull()}:$title"
@@ -148,7 +160,10 @@ data class Field(val label: String, val initial: String = "", val multiline: Boo
     AlertDialog(onDismissRequest = ::close, title = { Text(title) }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (draft.explanation.isNotBlank()) Text(draft.explanation)
-            fields.forEachIndexed { i, field -> OutlinedTextField(values[i], { values[i] = it }, label = { Text(field.label) }, singleLine = !field.multiline, minLines = if (field.multiline) 4 else 1, maxLines = if (field.multiline) 10 else 1, enabled = !busy, modifier = Modifier.fillMaxWidth()) }
+            fields.forEachIndexed { i, field ->
+                if (field.toggle) Row(verticalAlignment = Alignment.CenterVertically) { Text(field.label, Modifier.weight(1f)); Switch(values[i].toBoolean(), { values[i] = it.toString() }, enabled = !busy) }
+                else OutlinedTextField(values[i], { values[i] = it }, label = { Text(field.label) }, singleLine = !field.multiline, minLines = if (field.multiline) 4 else 1, maxLines = if (field.multiline) 10 else 1, enabled = !busy, modifier = Modifier.fillMaxWidth())
+            }
             if (required != null) OutlinedTextField(typed, { typed = it }, label = { Text("Type $required") }, enabled = !busy)
             if (busy) Loading(); error?.let { ErrorText(it) }
         }
@@ -165,7 +180,15 @@ data class Field(val label: String, val initial: String = "", val multiline: Boo
         "home" -> Home()
         "licenses" -> { val context = androidx.compose.ui.platform.LocalContext.current; Screen { Note(remember { context.assets.open("ThirdPartyNotices.txt").bufferedReader().use { it.readText() } }) } }
         "settings" -> Settings()
-        "repo" -> RepositoryScreen(page.repo)
+        "repo" -> RepositoryScreen(page.repo, page.branch)
+        "community" -> RepositoryCommunity(page)
+        "license" -> RepositoryLicense(page.repo)
+        "commits" -> CommitsScreen(page)
+        "commit" -> CommitScreen(page)
+        "deletedCommits" -> DeletedCommits(page.repo)
+        "restoreCommit" -> RestoreCommit(page)
+        "issueRepo" -> IssueRepositoryPicker()
+        "newIssue" -> IssueComposer(page.repo)
         "repos" -> Repositories(page)
         "profile" -> Profile(page.id)
         "people" -> People(page)

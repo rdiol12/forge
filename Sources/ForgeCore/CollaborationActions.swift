@@ -67,8 +67,10 @@ extension GitHubClient {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let data: Data
         let response: URLResponse
+        await clearCache()
         do { (data, response) = try await session.data(for: request) }
-        catch { throw GitHubError("Couldn't confirm the change: \(error.localizedDescription) Check GitHub before submitting again; the change may already be saved.") }
+        catch { await clearCache(); throw GitHubError("Couldn't confirm the change: \(error.localizedDescription) Check GitHub before submitting again; the change may already be saved.") }
+        await clearCache()
         if let status = (response as? HTTPURLResponse)?.statusCode, [400, 405, 409, 422].contains(status) {
             struct Failure: Decodable { let message: String }
             let message = (try? Self.decoder().decode(Failure.self, from: data))?.message ?? "GitHub rejected the change."

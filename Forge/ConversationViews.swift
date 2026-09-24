@@ -63,7 +63,7 @@ struct ConversationListView: View {
         .searchable(text: $search, prompt: "Search \(kind.title.lowercased())")
         .onSubmit(of: .search) { submitted = search.trimmingCharacters(in: .whitespacesAndNewlines) }
         .task(id: submitted + filter + store.account) { await load(reset: true) }
-        .refreshable { await load(reset: true) }
+        .refreshable { await store.client.clearCache(); await load(reset: true) }
         .toolbar { if kind == .issue { Button { compose = true } label: { Label("New issue", systemImage: "square.and.pencil") } } }
         .sheet(isPresented: $compose) { IssueComposer(repository: repository) { created = $0; showCreated = true } }
         .navigationDestination(isPresented: $showCreated) {
@@ -167,7 +167,7 @@ struct ConversationDetailView: View {
         }
         .sheet(isPresented: $edit) { IssueEditor(repository: repository, number: number) { Task { await load(reset: true) } } }
         .task(id: store.account) { await load(reset: true) }
-        .refreshable { await load(reset: true) }
+        .refreshable { await store.client.clearCache(); await load(reset: true) }
     }
 
     private func load(reset: Bool) async {
@@ -332,7 +332,7 @@ private struct PullFilesView: View {
             if files.count >= 3000 { Text("GitHub returns at most 3,000 changed files per pull request.").font(.footnote).foregroundStyle(.secondary) }
         }.navigationTitle("Files changed").navigationBarTitleDisplayMode(.inline)
         .task { if page == 0 { await load() } }
-        .refreshable { if !busy { files = []; page = 0; sha = nil; await load() } }
+        .refreshable { await store.client.clearCache(); if !busy { files = []; page = 0; sha = nil; await load() } }
     }
     private func load() async {
         guard !busy else { return }; busy = true; error = nil

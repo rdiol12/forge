@@ -8,15 +8,17 @@ final class ForgeStore {
     private(set) var runs: [RepositoryRun] = []
     private(set) var releases: [RepositoryRelease] = []
     private(set) var readReleases: Set<String> = []
+    private(set) var recoveries: [CommitRecovery] = []
     private(set) var isRefreshing = false
     private(set) var refreshedAt: Date?
     private(set) var account = ""
     private(set) var hasToken = false
     var errors: [String] = []
     private var token = ""
+    private var responseCache = APIMemoryCache()
     private var generation = 0
     private var refreshPending = false
-    var client: GitHubClient { GitHubClient(token: token) }
+    var client: GitHubClient { GitHubClient(token: token, cache: responseCache) }
 
     init() {
         let defaults = UserDefaults.standard
@@ -27,6 +29,22 @@ final class ForgeStore {
             hasToken = !token.isEmpty
             account = hasToken ? defaults.string(forKey: "account") ?? "Connected" : ""
         } catch { errors = [error.localizedDescription] }
+        loadRecoveries()
+    }
+
+    private func recoveryFile(account: String) throws -> URL {
+        guard GitHubAccount.validLogin(account) else { throw GitHubError("Connect GitHub before saving a recovery record.") }
+        let folder = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        return folder.appendingPathComponent("forge-recoveries-\(account.lowercased()).json")
+    }
+    private func loadRecoveries() {
+        recoveries = (try? JSONDecoder().decode([CommitRecovery].self, from: Data(contentsOf: recoveryFile(account: account))))?.filter(\.valid) ?? []
+    }
+    func saveRecovery(_ entry: CommitRecovery, account: String) throws {
+        guard account == self.account, entry.valid else { throw GitHubError("The connected account changed. Reopen the commit.") }
+        let next = [entry] + recoveries.filter { $0.id != entry.id }
+        try JSONEncoder().encode(next).write(to: recoveryFile(account: account), options: [.atomic, .completeFileProtection])
+        recoveries = next
     }
 
     func addRepository(_ input: String) async throws {
@@ -37,7 +55,12 @@ final class ForgeStore {
             repositories.append(repository)
             saveRepositories()
         }
-        await refresh()
+        Task { await refresh() }
+    }
+
+    func favorite(_ repository: Repository) {
+        if repositories.contains(where: { $0.id == repository.id }) { removeRepository(repository) }
+        else { repositories.append(repository); saveRepositories(); Task { await refresh() } }
     }
 
     func removeRepository(_ repository: Repository) {
@@ -64,9 +87,11 @@ final class ForgeStore {
         let account = try await GitHubClient(token: candidate).accountName()
         try TokenKeychain.save(candidate)
         generation += 1
+        responseCache = APIMemoryCache()
         token = candidate
         hasToken = true
         self.account = account
+        loadRecoveries()
         UserDefaults.standard.set(account, forKey: "account")
         runs = []
         releases = []
@@ -75,9 +100,11 @@ final class ForgeStore {
     func disconnect() throws {
         try TokenKeychain.delete()
         generation += 1
+        responseCache = APIMemoryCache()
         token = ""
         hasToken = false
         account = ""
+        recoveries = []
         runs = []
         releases = []
         errors = []
@@ -85,7 +112,8 @@ final class ForgeStore {
         UserDefaults.standard.removeObject(forKey: "account")
     }
 
-    func refresh() async {
+    func refresh(force: Bool = false) async {
+        if force { await client.clearCache() }
         guard !repositories.isEmpty else { return }
         guard !isRefreshing else { refreshPending = true; return }
         isRefreshing = true

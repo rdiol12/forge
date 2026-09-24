@@ -39,6 +39,7 @@ class AppTest {
         compose.onNodeWithText("My Work").assertIsDisplayed()
         compose.onNodeWithText("Pull Requests").assertIsDisplayed()
         screenshot("home-light")
+        compose.onNodeWithContentDescription("Create or add").performClick()
         compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("Sign in with GitHub").assertIsDisplayed()
         compose.onNodeWithContentDescription("Back").performClick()
@@ -104,6 +105,34 @@ class AppTest {
         compose.runOnIdle { assertTrue(state.drafts.isEmpty()) }
     }
 
+    @Test fun issueDraftKeepsTextAndLabelsAcrossScreenRecreation() {
+        val state = state(); val show = mutableStateOf(true)
+        compose.setContent { ForgeTheme { CompositionLocalProvider(LocalForge provides state) { if (show.value) IssueComposer("owner/repo") } } }
+        compose.onNodeWithText("Title").performTextInput("Keep my issue")
+        compose.onNodeWithText("Leave a comment").performTextInput("Keep my description")
+        compose.runOnIdle { state.issueDrafts.values.first().selections["Labels"] = listOf(IssueOption("bug", "bug")); show.value = false }
+        compose.waitForIdle(); compose.runOnIdle { show.value = true }
+        compose.onNodeWithText("Keep my issue").assertIsDisplayed()
+        compose.onNodeWithText("Keep my description").assertIsDisplayed()
+        compose.onNodeWithText("Labels (1)").assertIsDisplayed()
+        screenshot("issue-composer")
+    }
+
+    @Test fun removedCommitRecordsPersistAndStayAccountScoped() {
+        val vault = Vault(context); val original = vault.read("session")
+        val preferences = context.getSharedPreferences("forge", 0)
+        try {
+            vault.save("session", json("token" to "local-test-only", "account" to "forge-recovery-test").toString())
+            val state = state()
+            state.saveRecovery(json("id" to "fixture", "repository" to "owner/repo", "branch" to "main", "selected" to "a".repeat(40), "oldHead" to "b".repeat(40), "newHead" to "c".repeat(40), "message" to "Saved commit", "created" to "2026-09-24T00:00:00Z"), state.account)
+            assertTrue(state().recoveries.any { it.s("id") == "fixture" })
+            compose.setContent { ForgeTheme { CompositionLocalProvider(LocalForge provides state) { DeletedCommits("") } } }
+            compose.onNodeWithText("owner/repo").assertIsDisplayed(); compose.onNodeWithText("Saved commit").assertIsDisplayed()
+            screenshot("deleted-commits")
+            compose.runOnIdle { state.disconnect(); assertTrue(state.recoveries.isEmpty()) }
+        } finally { vault.save("session", original); preferences.edit().remove("recoveries:forge-recovery-test").commit() }
+    }
+
     @Test fun privateRepositoryWorkflowsReleasesAndPinnedCodeAreReadable() = runBlocking {
         val file = File(context.filesDir, "live-token")
         assumeTrue("CI supplies an ephemeral read token for this check", file.exists())
@@ -116,6 +145,11 @@ class AppTest {
         assertTrue(validSha(sha))
         val readme = api.obj("/repos/$repo/readme", mapOf("ref" to sha))
         assertTrue(api.blob(repo, readme.getString("sha")).contains("Forge"))
+        val document = api.readme(repo, sha).second
+        assertTrue(document.html.contains("Forge"))
+        val png = api.data("/repos/$repo/contents/Forge/Assets.xcassets/AppIcon.appiconset/AppIcon.png", mapOf("ref" to sha))
+        assertArrayEquals(byteArrayOf(-119, 80, 78, 71), png.take(4).toByteArray())
+        assertTrue(api.list("/repos/$repo/commits", query = mapOf("sha" to sha)).isNotEmpty())
         val runs = api.obj("/repos/$repo/actions/runs", mapOf("per_page" to "1", "status" to "success")).rows("workflow_runs")
         assertTrue(runs.isNotEmpty())
         val jobs = api.obj("/repos/$repo/actions/runs/${runs.first().getLong("id")}/jobs").rows("jobs")
@@ -150,6 +184,9 @@ class AppTest {
                 downloads.cancelAll()
                 assertEquals("Saved", entry.status)
                 assertTrue(downloads.file(entry).isFile)
+                downloads.remove(entry)
+                assertFalse(downloaded.exists())
+                assertFalse(downloads.entries.contains(entry))
             }
         }
     }

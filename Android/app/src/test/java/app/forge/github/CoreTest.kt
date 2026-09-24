@@ -5,6 +5,54 @@ import org.junit.Test
 import java.net.URI
 
 class CoreTest {
+    @Test fun historyPreservesUnrelatedFilesAndGitRejectsConcurrentUpdates() {
+        val a = GitTreeEntry("a.txt", "100644", "blob", "a".repeat(40)); val b = a.copy(sha = "b".repeat(40)); val extra = a.copy(path = "extra.txt")
+        assertEquals(mapOf(a.path to a, extra.path to extra), GitHistory.apply(mapOf(b.path to b), mapOf(a.path to a), mapOf(b.path to b, extra.path to extra)))
+        assertThrows(IllegalArgumentException::class.java) { GitHistory.apply(mapOf(a.path to a), mapOf(b.path to b), emptyMap()) }
+        val folder = java.nio.file.Files.createTempDirectory("forge-git-test").toFile()
+        try {
+            fun git(vararg args: String, input: ByteArray = byteArrayOf()): ByteArray {
+                val builder = ProcessBuilder(listOf("git", "-C", folder.path) + args)
+                builder.environment().putAll(mapOf("GIT_AUTHOR_NAME" to "Test", "GIT_AUTHOR_EMAIL" to "test@example.invalid", "GIT_COMMITTER_NAME" to "Test", "GIT_COMMITTER_EMAIL" to "test@example.invalid"))
+                val process = builder.start(); process.outputStream.use { it.write(input) }; val output = process.inputStream.readBytes(); process.waitFor(); return output
+            }
+            fun ByteArray.text() = toString(Charsets.UTF_8).trim()
+            git("init", "--bare", "-q")
+            val tree = git("hash-object", "-t", "tree", "-w", "--stdin").text()
+            val old = git("commit-tree", tree, "-m", "Original").text()
+            val new = git("commit-tree", tree, "-p", old, "-m", "Next").text()
+            git("update-ref", "refs/heads/main", old)
+            GitHistory.validateReport(git("receive-pack", "--stateless-rpc", folder.path, input = GitHistory.pushPacket("main", old, new)), "main")
+            assertThrows(IllegalArgumentException::class.java) { GitHistory.validateReport(git("receive-pack", "--stateless-rpc", folder.path, input = GitHistory.pushPacket("main", old, old)), "main") }
+            assertEquals(new, git("rev-parse", "refs/heads/main").text())
+        } finally { folder.deleteRecursively() }
+    }
+    @org.junit.Test fun memoryCacheRejectsOversizedAndLateResponsesAfterRefresh() {
+        val cache = APIMemoryCache(capacity = 8)
+        val epoch = cache.epoch
+        cache.store("first-account", "first".toByteArray(), "one", epoch)
+        org.junit.Assert.assertEquals("first", cache.value("first-account")!!.bytes.toString(Charsets.UTF_8))
+        org.junit.Assert.assertNull(cache.value("second-account"))
+        cache.clear()
+        cache.store("first-account", "stale".toByteArray(), "one", epoch)
+        org.junit.Assert.assertNull(cache.value("first-account"))
+        cache.store("first-account", ByteArray(9), "one", cache.epoch)
+        org.junit.Assert.assertNull(cache.value("first-account"))
+    }
+    @org.junit.Test fun readmeImagesStayPinnedAndIssueMetadataIsExplicit() {
+        val document = ReadmeDocument("<img src=\"../images/a%20b.png\"><img src=\"https://example.com/badge.svg\"><img src=\"javascript:alert(1)\">", "owner/repo", "a".repeat(40), "docs/README.md")
+        org.junit.Assert.assertTrue(document.html.contains("forge-readme://image/images/a%20b.png"))
+        org.junit.Assert.assertTrue(document.html.contains("https://example.com/badge.svg"))
+        org.junit.Assert.assertFalse(document.html.contains("javascript:alert"))
+        org.junit.Assert.assertEquals("images/a b.png", document.imagePath(java.net.URI("forge-readme://image/images/a%20b.png")))
+        org.junit.Assert.assertNull(document.imagePath(java.net.URI("https://api.github.com/user")))
+        val body = issueFields("  Example  ", "Details", listOf("octocat"), listOf("bug"), 4)
+        org.junit.Assert.assertEquals("Example", body.getString("title"))
+        org.junit.Assert.assertEquals(4, body.getInt("milestone"))
+        org.junit.Assert.assertFalse(body.has("project"))
+        org.junit.Assert.assertTrue(runCatching { issueFields(" ", "") }.isFailure)
+        org.junit.Assert.assertTrue(runCatching { issueFields("Issue", "", listOf("../bad")) }.isFailure)
+    }
     @Test fun apiPathsAndStorageNeverLeakCredentials() {
         assertEquals("https://api.github.com/repos/a/b/contents/a%23b?ref=feature%2Fa", apiUrl("/repos/a/b/contents/a#b", mapOf("ref" to "feature/a")).toString())
         for (path in listOf("//evil.test", "/a/../b", "https://evil.test")) assertThrows(IllegalArgumentException::class.java) { apiUrl(path) }

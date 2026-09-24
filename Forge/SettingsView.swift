@@ -99,7 +99,7 @@ struct SettingsView: View {
                     }
                     if let error { ErrorNotice(message: error) }
                 } header: { Text("GitHub account") }
-                  footer: { Text("You sign in on GitHub's secure page. Forge stores the access token in this iPhone's Keychain. Signing into a GitHub web page doesn't connect the native app. OAuth requests repo access for private files and notifications access for Inbox. Disconnecting stops active downloads; files you've saved remain in Downloads.") }
+                  footer: { Text("You sign in on GitHub's secure page. Forge stores the access token in this iPhone's Keychain. Signing into a GitHub web page doesn't connect the native app. OAuth requests repo, notifications, user, project and workflow scopes for repository changes, Inbox, profile/follow controls, Projects and workflow-file edits. Disconnecting stops active downloads; files you've saved remain in Downloads.") }
 
                 Section("Home") {
                     Toggle("Show Copilot shortcut", isOn: $showCopilot)

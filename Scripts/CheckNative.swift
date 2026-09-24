@@ -6,6 +6,25 @@ struct CheckNative {
         // Optional developer token comes from stdin, never arguments, files, or logs.
         let token = CommandLine.arguments.contains("--authenticated") ? (readLine() ?? "") : ""
         let client = GitHubClient(token: token)
+        if CommandLine.arguments.contains("--experience") {
+            let repository = try Repository("rdiol12/forge")
+            let client = GitHubClient(token: token, cache: APIMemoryCache())
+            let info: RepositoryOverview = try await client.get("/repos/\(repository.fullName)")
+            let ref: GitReference = try await client.get("/repos/\(repository.fullName)/git/ref/heads/\(info.defaultBranch)")
+            let (_, document) = try await client.readme(in: repository, sha: ref.object.sha)
+            precondition(document.html.contains("Forge"))
+            let image = try await client.readmeImage(URL(string: "forge-readme://image/Forge/Assets.xcassets/AppIcon.appiconset/AppIcon.png")!, document: document)
+            precondition(image.starts(with: [137, 80, 78, 71]))
+            let login = try await client.accountName()
+            let profile = try await client.profileHighlights(login: login)
+            let commits: [HistoryCommit] = try await client.get("/repos/\(repository.fullName)/commits", page: 1, count: 30, query: [.init(name: "sha", value: ref.object.sha)])
+            precondition(!commits.isEmpty)
+            for field in ["Assignees", "Labels", "Milestone"] { _ = try await client.issueOptions(in: repository, kind: field, page: 1, cursor: nil) }
+            print("PASS: private rendered README, authenticated PNG, actual pinned repositories (\(profile.pinnedItems.nodes.count)), paginated commits, assignees, labels and milestones. No writes.")
+            do { _ = try await client.issueOptions(in: repository, kind: "Project", page: 1); print("PASS: linked Projects readable.") }
+            catch { if error.localizedDescription.contains("read:project") { print("LIMIT: connected developer token lacks read:project; app correctly reports the permission error.") } else { throw error } }
+            return
+        }
         if CommandLine.arguments.contains("--workspace") {
             let repository = try Repository("rdiol12/forge")
             let settings: RepositorySettings = try await client.get("/repos/\(repository.fullName)")

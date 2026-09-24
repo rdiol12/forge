@@ -23,7 +23,7 @@ struct OAuthAttempt: Sendable {
         url.queryItems = [
             URLQueryItem(name: "client_id", value: clientID),
             URLQueryItem(name: "redirect_uri", value: Self.callback),
-            URLQueryItem(name: "scope", value: "repo notifications"),
+            URLQueryItem(name: "scope", value: "repo notifications user project workflow"),
             URLQueryItem(name: "state", value: state),
             URLQueryItem(name: "code_challenge", value: challenge),
             URLQueryItem(name: "code_challenge_method", value: "S256"),

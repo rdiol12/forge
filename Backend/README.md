@@ -6,7 +6,7 @@ GitHub app registration:
 - Name: Forge
 - Homepage: https://github.com/rdiol12/forge
 - Callback: app.forge.github://oauth/callback
-- OAuth scopes requested: repo and notifications. The repo scope includes write access because GitHub OAuth does not offer a private-repository read-only scope; Forge currently uses read-only APIs.
+- OAuth scopes requested: repo, notifications, user, project and workflow. They support private repository changes, Inbox, profile and follow changes, issue Projects, and workflow-file edits. GitHub presents these permissions during consent.
 - Device flow: disabled. Use the standard authorization-code flow.
 
 Runtime secrets: GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET. Keep the secret on the backend, never in Swift, Info.plist, Git, or an IPA. Missing configuration returns HTTP 503. The public configuration endpoint returns only the client ID. The token endpoint accepts only a code and a PKCE verifier, with a fixed GitHub upstream and callback URL. Responses are no-store; redirects and arbitrary callback destinations are rejected.

@@ -4,6 +4,7 @@ import QuickLook
 @MainActor
 struct DownloadsView: View {
     @State private var previewURL: URL?
+    @State private var deleting: DownloadEntry?
     @Environment(DownloadManager.self) private var downloads
     @Environment(ForgeStore.self) private var store
 
@@ -42,6 +43,8 @@ struct DownloadsView: View {
                                     Button("Preview") { previewURL = url }.buttonStyle(.borderless)
                                     ShareLink(item: url) { Label("Save / share", systemImage: "square.and.arrow.up") }
                                         .buttonStyle(.bordered)
+                                    Button(role: .destructive) { deleting = entry } label: { Image(systemName: "trash") }
+                                        .buttonStyle(.borderless).accessibilityLabel("Delete downloaded file")
                                 }
                             } else {
                                 Text(entry.message ?? "File unavailable").font(.caption).foregroundStyle(.secondary)
@@ -49,8 +52,8 @@ struct DownloadsView: View {
                             }
                         }
                         .padding(.vertical, 8)
-                        .swipeActions {
-                            Button("Delete", role: .destructive) { downloads.remove(entry) }
+                        .swipeActions(allowsFullSwipe: false) {
+                            Button("Delete", role: .destructive) { deleting = entry }
                         }
                     }
                 } footer: {
@@ -60,5 +63,8 @@ struct DownloadsView: View {
         }
         .navigationTitle("Downloads")
         .quickLookPreview($previewURL)
+        .confirmationDialog("Delete this download?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
+            if let entry = deleting { Button("Delete \(entry.specification.name)", role: .destructive) { previewURL = nil; downloads.remove(entry); deleting = nil } }
+        } message: { Text("Remove the file from Forge's download library. Files you exported elsewhere and files on GitHub are kept.") }
     }
 }

@@ -145,6 +145,9 @@ struct GitHubAccount: Decodable, Identifiable, Sendable {
     let followers: Int?
     let following: Int?
     let type: String?
+    let blog: String?
+    let twitterUsername: String?
+    let hireable: Bool?
 
     static func validLogin(_ login: String) -> Bool {
         login.range(of: #"^[A-Za-z0-9][A-Za-z0-9-]{0,38}$"#, options: .regularExpression) != nil

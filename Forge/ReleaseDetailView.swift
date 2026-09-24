@@ -93,7 +93,7 @@ struct ReleaseDetailView: View {
         .confirmationDialog("Delete release \(release.tagName)?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete release and its assets", role: .destructive) { Task { await delete() } }
         } message: { Text("This permanently deletes the release and its uploaded files. The Git tag remains in the repository.") }
-        .refreshable { await reload() }
+        .refreshable { await store.client.clearCache(); await reload() }
     }
 
     private func reload() async {

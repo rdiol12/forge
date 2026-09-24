@@ -8,6 +8,9 @@ struct HomeView: View {
     @AppStorage("showCopilot") private var showCopilot = false
     @State private var addingRepository = false
     @State private var showingSettings = false
+    @State private var creatingIssue = false
+    @State private var createdIssue: Conversation?
+    @State private var showingCreated = false
 
     var body: some View {
         TabView(selection: $tab) {
@@ -16,15 +19,17 @@ struct HomeView: View {
                     .navigationTitle("Home")
                     .toolbar {
                         ToolbarItem(placement: .topBarTrailing) {
-                            Button { addingRepository = true } label: { Image(systemName: "plus").foregroundStyle(Color.primary) }
-                                .accessibilityLabel("Add favorite repository")
+                            Menu {
+                                Button("New issue", systemImage: "square.and.pencil") { creatingIssue = true }
+                                Button("Add favorite", systemImage: "star") { addingRepository = true }
+                            } label: { Image(systemName: "plus").foregroundStyle(Color.primary) }.accessibilityLabel("Create or add")
                         }
                         if #available(iOS 26.0, *) { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
                         ToolbarItem(placement: .topBarTrailing) {
-                            Button { tab = 2 } label: { Image(systemName: "magnifyingglass").foregroundStyle(Color.primary) }
-                                .accessibilityLabel("Search GitHub")
+                            Button { tab = 3 } label: { Avatar(login: store.account, size: 30) }.accessibilityLabel("Your profile")
                         }
                     }
+                    .navigationDestination(isPresented: $showingCreated) { if let createdIssue, let repo = createdIssue.repository { ConversationDetailView(repository: repo, number: createdIssue.number, kind: .issue) } }
             }
             .tabItem { Label("Home", image: "octicon-home") }.tag(0)
             NavigationStack { InboxView(showingSettings: $showingSettings) }
@@ -37,6 +42,7 @@ struct HomeView: View {
         .id(store.account)
         .inAppLinks()
         .sheet(isPresented: $addingRepository) { AddRepositoryView() }
+        .sheet(isPresented: $creatingIssue) { IssueComposer(repository: nil) { createdIssue = $0; showingCreated = true } }
         .sheet(isPresented: $showingSettings, onDismiss: { Task { await store.refresh() } }) { SettingsView() }
         .alert("Download", isPresented: Binding(get: { downloads.errorMessage != nil }, set: { if !$0 { downloads.errorMessage = nil } })) {
             Button("OK") { downloads.errorMessage = nil }
@@ -87,7 +93,7 @@ struct HomeView: View {
             }.listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
 
             Section {
-                NavigationLink { ActionsView() } label: {
+                NavigationLink { OwnedActionsView() } label: {
                     HStack {
                         WorkLabel("Actions", icon: "workflow", color: .blue)
                         Spacer()
@@ -109,6 +115,7 @@ struct HomeView: View {
                         Text(downloads.entries.count, format: .number).foregroundStyle(.secondary)
                     }
                 }
+                NavigationLink { DeletedCommitsView() } label: { Label("Deleted commits", systemImage: "clock.arrow.circlepath") }
                 if showCopilot { GitHubWebRow("Copilot", icon: "copilot", color: Color(white: 0.28), path: "/copilot") }
             } header: { Text("Shortcuts").font(.headline).padding(.leading, -16) }
             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
@@ -117,7 +124,7 @@ struct HomeView: View {
         .listSectionSpacing(22)
         .environment(\.defaultMinListRowHeight, 50)
         .headerProminence(.increased)
-        .refreshable { await store.refresh() }
+        .refreshable { await store.refresh(force: true) }
     }
 }
 
@@ -174,7 +181,7 @@ struct ActionsView: View {
         .navigationTitle("Actions")
         .searchable(text: $search, prompt: "Repository, branch or run")
         .task(id: store.account) { await load(reset: true) }
-        .refreshable { await load(reset: true) }
+        .refreshable { await store.client.clearCache(); await load(reset: true) }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await load(reset: true) } }
         }
@@ -217,7 +224,7 @@ struct ReleasesView: View {
         (repository == nil ? store.releases : repositoryReleases).filter {
             (!unreadOnly || !store.readReleases.contains($0.id)) &&
             (search.isEmpty || "\($0.repository.fullName) \($0.release.title) \($0.release.tagName)".localizedCaseInsensitiveContains(search))
-        }
+        }.sorted { ($0.release.publishedAt ?? .distantPast) > ($1.release.publishedAt ?? .distantPast) }
     }
 
     var body: some View {
@@ -263,7 +270,7 @@ struct ReleasesView: View {
         .navigationTitle("Releases")
         .searchable(text: $search, prompt: "Repository or version")
         .task(id: store.account) { await load(reset: true) }
-        .refreshable { await load(reset: true) }
+        .refreshable { await store.client.clearCache(); await load(reset: true) }
     }
 
     private func load(reset: Bool) async {

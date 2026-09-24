@@ -39,7 +39,7 @@ xcrun simctl ui "$device" appearance light
 xcrun simctl launch "$device" app.forge.github --forge-preview-url https://github.com/cli/cli/issues/14512
 sleep 10
 xcrun simctl io "$device" screenshot dist/screenshots/native-issue.png
-for preview in 'native-profile https://github.com/octocat' 'native-following https://github.com/octocat?tab=following' 'native-repositories https://github.com/octocat?tab=repositories' 'native-actions https://github.com/actions/setup-node/actions'; do
+for preview in 'native-repository https://github.com/actions/setup-node' 'native-profile https://github.com/octocat' 'native-following https://github.com/octocat?tab=following' 'native-repositories https://github.com/octocat?tab=repositories' 'native-actions https://github.com/actions/setup-node/actions'; do
   read -r name url <<< "$preview"
   xcrun simctl terminate "$device" app.forge.github
   xcrun simctl launch "$device" app.forge.github --forge-preview-url "$url"

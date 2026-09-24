@@ -3,73 +3,7 @@ import UIKit
 
 @MainActor
 struct OwnedActionsView: View {
-    @Environment(ForgeStore.self) private var store
-    @State private var runs: [RepositoryRun] = []
-    @State private var errors: [String] = []
-    @State private var page = 0
-    @State private var more = false
-    @State private var busy = false
-    @State private var count = 0
-    @State private var loading = ""
-    @State private var filter = "All"
-    @State private var search = ""
-    @State private var requestID = UUID()
-
-    private var visible: [RepositoryRun] {
-        runs.filter {
-            (filter == "All" || (filter == "Failed" && $0.run.state == .failed) || (filter == "Active" && [.running, .queued].contains($0.run.state)) || (filter == "Completed" && $0.run.status == "completed"))
-                && (search.isEmpty || "\($0.repository.fullName) \($0.run.displayTitle)".localizedCaseInsensitiveContains(search))
-        }.sorted { $0.run.createdAt > $1.run.createdAt }
-    }
-    var body: some View {
-        List {
-            if !store.hasToken { ConnectGitHubNotice() }
-            else {
-                NavigationLink("Browse repositories") { AccountRepositoriesView(collection: .owned, showsActions: true) }
-                Picker("Status", selection: $filter) { ForEach(["All", "Active", "Failed", "Completed"], id: \.self) { Text($0).tag($0) } }.pickerStyle(.segmented)
-                Section {
-                    ForEach(visible) { entry in NavigationLink { RunDetailView(entry: entry) } label: { RunRow(entry: entry) } }
-                    if busy { ProgressView(loading.isEmpty ? "Loading repositories…" : "Checking \(loading)…") }
-                    if runs.isEmpty && !busy && errors.isEmpty { Text("No workflow runs yet.").foregroundStyle(.secondary) }
-                    if more && !busy { Button("Load more repositories") { Task { await load(reset: false) } } }
-                } header: { Text("\(count) owned repositories checked") }
-                  footer: { Text("Latest 30 runs per loaded repository, including private repositories your connection can access. Pull to refresh.") }
-                if !errors.isEmpty {
-                    Section("Couldn't load some activity") {
-                        ForEach(errors, id: \.self) { ErrorNotice(message: $0) }
-                        Button("Retry refresh") { Task { await load(reset: true) } }.disabled(busy)
-                    }
-                }
-            }
-        }.navigationTitle("Your Actions").searchable(text: $search, prompt: "Repository or run")
-        .task(id: store.account) { await load(reset: true) }
-        .refreshable { await load(reset: true) }
-    }
-    private func load(reset: Bool) async {
-        if !reset && busy { return }
-        let id = UUID(), client = store.client; requestID = id
-        if reset { runs = []; page = 0; more = false; count = 0; errors = [] }
-        guard store.hasToken else { busy = false; return }
-        busy = true
-        defer { if requestID == id { busy = false; loading = "" } }
-        do {
-            let repositories = try await client.accountRepositories(.owned, page: page + 1)
-            for summary in repositories {
-                guard !Task.isCancelled, requestID == id else { return }
-                let repository = try Repository(summary.fullName); loading = repository.fullName
-                do {
-                    let fetched = try await client.runs(in: repository)
-                    guard !Task.isCancelled, requestID == id else { return }
-                    runs.removeAll { $0.repository == repository }
-                    runs += fetched.map { RepositoryRun(repository: repository, run: $0) }
-                } catch { if !Task.isCancelled, requestID == id { errors.append("\(repository.fullName): \(error.localizedDescription)") } }
-                guard !Task.isCancelled, requestID == id else { return }
-                count += 1
-            }
-            guard !Task.isCancelled, requestID == id else { return }
-            page += 1; more = repositories.count == 30
-        } catch { if !Task.isCancelled, requestID == id { errors.append(error.localizedDescription) } }
-    }
+    var body: some View { AccountRepositoriesView(collection: .owned, showsActions: true) }
 }
 
 @MainActor
@@ -118,7 +52,7 @@ struct LatestBuildView: View {
         }.navigationTitle("Latest build").navigationBarTitleDisplayMode(.inline)
         .task(id: store.account) { await load(reset: true) }
         .task(id: selected) { await loadArtifacts() }
-        .refreshable { await load(reset: true) }
+        .refreshable { await store.client.clearCache(); await load(reset: true) }
     }
     private func load(reset: Bool) async {
         guard !busy else { return }; busy = true; error = nil

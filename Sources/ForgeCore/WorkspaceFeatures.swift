@@ -69,6 +69,7 @@ struct RepositorySettings: Decodable, Sendable {
 extension GitHubClient {
     func setVisibility(in repository: Repository, expected: String, makePrivate: Bool) async throws {
         guard !token.isEmpty else { throw GitHubError("Connect GitHub before changing repository visibility.") }
+        await clearCache()
         let current: RepositorySettings = try await get("/repos/\(repository.fullName)")
         guard current.permissions?.admin == true else { throw GitHubError("Only a repository administrator can change its visibility.") }
         guard current.visibility == expected, ["public", "private"].contains(expected) else { throw GitHubError("Repository visibility changed. Refresh before continuing.") }
@@ -90,6 +91,7 @@ extension GitHubClient {
 
     func editRelease(in repository: Repository, release: Release, name: String, notes: String, prerelease: Bool) async throws -> Release {
         guard release.id > 0 else { throw GitHubError("Invalid release.") }
+        await clearCache()
         let current: Release = try await get("/repos/\(repository.fullName)/releases/\(release.id)")
         guard current.name == release.name, current.body == release.body, current.prerelease == release.prerelease else { throw GitHubError("This release changed while you were editing. Reopen the editor to load the latest notes.") }
         let data = try await mutationData("/repos/\(repository.fullName)/releases/\(release.id)", method: "PATCH", body: ["name": name, "body": notes, "prerelease": prerelease])
@@ -139,6 +141,7 @@ extension GitHubClient {
     func editIssue(in repository: Repository, number: Int, original: IssueEditDetails, title: String, body: String, labels: [String]?, assignees: [String]?) async throws {
         let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard number > 0, !title.isEmpty, (assignees ?? []).allSatisfy(GitHubAccount.validLogin) else { throw GitHubError("Enter a title and valid GitHub assignees.") }
+        await clearCache()
         let current: IssueEditDetails = try await get("/repos/\(repository.fullName)/issues/\(number)")
         guard current.updatedAt == original.updatedAt else { throw GitHubError("This issue changed while you were editing. Reopen the editor to load the latest version.") }
         var changes: [String: Any] = [:]

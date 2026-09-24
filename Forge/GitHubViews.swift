@@ -163,71 +163,6 @@ struct FavoritesView: View {
 }
 
 @MainActor
-struct RepositoryView: View {
-    let repository: Repository
-    var summary: RepositorySummary? = nil
-    @Environment(ForgeStore.self) private var store
-    @State private var busy = false
-    @State private var error: String?
-    private var isFavorite: Bool { store.repositories.contains { $0.id == repository.id } }
-    var body: some View {
-        List {
-            Section {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack(spacing: 8) {
-                        Avatar(login: String(repository.fullName.split(separator: "/")[0]), size: 24)
-                        Text(repository.fullName.split(separator: "/")[0]).foregroundStyle(.secondary)
-                    }
-                    Text(repository.name).font(.title2.bold())
-                    if let description = summary?.description { Text(description).font(.subheadline) }
-                    if let summary {
-                        HStack {
-                            Label(summary.stargazersCount.formatted(), systemImage: "star")
-                            if let language = summary.language { Text(language) }
-                        }.font(.subheadline).foregroundStyle(.secondary)
-                    }
-                }.padding(.vertical, 10)
-                Button {
-                    if isFavorite { store.removeRepository(repository) }
-                    else {
-                        busy = true
-                        Task {
-                            defer { busy = false }
-                            do { try await store.addRepository(repository.fullName); error = nil }
-                            catch { self.error = error.localizedDescription }
-                        }
-                    }
-                } label: {
-                    HStack {
-                        Label(isFavorite ? "Remove from favorites" : "Add to favorites", systemImage: isFavorite ? "star.fill" : "star")
-                        Spacer()
-                        if busy { ProgressView() }
-                    }
-                }.disabled(busy)
-                if let error { ErrorNotice(message: error) }
-            }
-            Section {
-                NavigationLink { RepositoryFilesView(repository: repository) } label: { WorkLabel("Code", icon: "repo", color: Color(white: 0.28)) }
-                NavigationLink { ReadmeView(repository: repository) } label: { Label("README", systemImage: "doc.richtext") }
-                NavigationLink { CreateBranchView(repository: repository) } label: { Label("Create branch", systemImage: "arrow.triangle.branch").foregroundStyle(.primary) }
-                NavigationLink { ConversationListView(kind: .issue, repository: repository) } label: { WorkLabel("Issues", icon: "issue-opened", color: .green) }
-                NavigationLink { ConversationListView(kind: .pullRequest, repository: repository) } label: { WorkLabel("Pull Requests", icon: "git-pull-request", color: .blue) }
-                NavigationLink { ConversationListView(kind: .discussion, repository: repository) } label: { WorkLabel("Discussions", icon: "comment-discussion", color: .purple) }
-            }
-            Section {
-                NavigationLink { ActionsView(repository: repository) } label: { WorkLabel("Actions", icon: "workflow", color: .blue) }
-                NavigationLink { LatestBuildView(repository: repository) } label: { Label("Latest successful build", systemImage: "arrow.down.circle") }
-                NavigationLink { ReleasesView(repository: repository) } label: { WorkLabel("Releases", icon: "tag", color: .green) }
-                NavigationLink { RepositorySettingsView(repository: repository) } label: { Label("Repository settings", systemImage: "gearshape") }
-            }
-        }
-        .navigationTitle(repository.name).navigationBarTitleDisplayMode(.inline)
-        .toolbar { ShareLink(item: URL(string: "https://github.com/\(repository.fullName)")!) }
-        .refreshable { await store.refresh() }
-    }
-}
-
-@MainActor
 struct ExploreView: View {
     @Environment(ForgeStore.self) private var store
     @State private var query = ""
@@ -272,7 +207,7 @@ struct ExploreView: View {
             submittedQuery = input.isEmpty ? "stars:>10000" : input
         }
         .task(id: submittedQuery + store.account) { await load(reset: true) }
-        .refreshable { await load(reset: true) }
+        .refreshable { await store.client.clearCache(); await load(reset: true) }
     }
 
     private func load(reset: Bool) async {
@@ -374,7 +309,7 @@ struct InboxView: View {
         .navigationTitle("Inbox")
         .searchable(text: $search, prompt: "Filter loaded notifications")
         .task(id: store.account) { await load(reset: true) }
-        .refreshable { await load(reset: true) }
+        .refreshable { await store.client.clearCache(); await load(reset: true) }
         .sheet(item: $selected) { entry in
             if let url = entry.webURL {
                 if GitHubRoute(url) != nil { NativeLinkSheet(url: url) }

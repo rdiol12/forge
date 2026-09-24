@@ -130,6 +130,14 @@ class Downloads(private val context: Context) {
         entry.active = false; entry.status = "Cancelled"; entry.file = ""; save()
     }
     fun cancelAll() { refresh(); entries.filter { it.active }.forEach(::cancel) }
+    fun remove(entry: DownloadEntry) {
+        val target = entry.file.takeIf { it.isNotBlank() }?.let { File(folder, it).canonicalFile }
+        require(target == null || target.parentFile == folder.canonicalFile) { "Invalid download path." }
+        if (entry.active) cancel(entry)
+        require(target == null || !target.exists() || target.delete()) { "Could not delete this downloaded file. Try again." }
+        if (entry.systemID > 0) manager.remove(entry.systemID)
+        entries.remove(entry); save()
+    }
     fun retry(api: GitHub, entry: DownloadEntry) { cancel(entry); entries.remove(entry); start(api, entry.spec) }
     fun file(entry: DownloadEntry): File {
         require(entry.status == "Saved" && entry.file.isNotBlank()) { "Download this file first." }

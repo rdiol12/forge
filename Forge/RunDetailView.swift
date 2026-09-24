@@ -98,7 +98,7 @@ struct RunDetailView: View {
         }
         .navigationTitle(run.name ?? "Workflow run").navigationBarTitleDisplayMode(.inline)
         .task { await reload() }
-        .refreshable { await reload() }
+        .refreshable { await store.client.clearCache(); await reload() }
         .confirmationDialog("\(action.title) for run #\(run.runNumber)?", isPresented: $confirmAction, titleVisibility: .visible) {
             Button(action.title, role: action == .cancel ? .destructive : nil) { Task { await performAction() } }
         } message: { Text("This changes the workflow on GitHub and requires Actions write access.") }

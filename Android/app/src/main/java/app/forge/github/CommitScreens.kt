@@ -1,0 +1,92 @@
+package app.forge.github
+
+import androidx.compose.foundation.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.dp
+
+@Composable fun CommitsScreen(page: Page) {
+    val state = LocalForge.current
+    Screen { Loaded(page.repo to page.branch, load = { state.api.obj("/repos/${repository(page.repo)}/git/ref/heads/${page.branch}").o("object").s("sha") }) { head ->
+        Note("${page.repo} · ${page.branch}")
+        Group { Paged(head, load = { state.api.list("/repos/${page.repo}/commits", it, mapOf("sha" to head)) }) { item ->
+            RowLink(item.o("commit").s("message").lineSequence().first(), "${item.s("sha").take(7)} · ${item.o("commit").o("author").s("name")}") {
+                state.open(Page("commit", item.s("sha").take(7), page.repo, id = item.s("sha"), sha = head, branch = page.branch))
+            }
+        } }
+    } }
+}
+
+@Composable fun CommitScreen(page: Page) {
+    val state = LocalForge.current; var action by rememberSaveable { mutableStateOf<String?>(null) }
+    Screen { Loaded(page, load = { require(validSha(page.id)); state.api.obj("/repos/${repository(page.repo)}/commits/${page.id}", mapOf("per_page" to "30")) to state.api.obj("/repos/${page.repo}") }) { (commit, repo) ->
+        Group { Note(commit.o("commit").s("message")); Note("${page.id}\n${page.branch}") }
+        Group("Changed files") {
+            Paged(page.id, load = { state.api.obj("/repos/${page.repo}/commits/${page.id}", mapOf("per_page" to "30", "page" to it.toString())).rows("files") }) { file ->
+                var expanded by remember(file.s("filename")) { mutableStateOf(false) }
+                RowLink(file.s("filename"), "${file.s("status")} · +${file.optInt("additions")} −${file.optInt("deletions")}") { expanded = !expanded }
+                if (expanded) CommitDiff(file.s("patch").ifBlank { "GitHub has no text diff for this file." })
+            }
+        }
+        if (repo.o("permissions").optBoolean("push")) Group("Commit actions") {
+            val enabled = commit.rows("parents").size == 1
+            TextButton(enabled = enabled, onClick = { action = "Undo changes" }) { Text("Undo changes") }
+            TextButton(enabled = enabled, onClick = { action = "Remove from history" }) { Text("Remove from history", color = MaterialTheme.colorScheme.error) }
+            Note("Undo adds a new commit. Removing rewrites later commits. Conflicting edits, root commits, and merge rewrites need desktop Git. Repository rules still apply.")
+        }
+        action?.let { choice ->
+            val remove = choice == "Remove from history"
+            val account = state.account
+            EditDialog(choice, emptyList(), if (remove) "Remove ${page.id.take(7)} from ${page.branch} and replay up to 200 later commits. Later commit IDs change and their original signatures are lost. Collaborators must reconcile local branches. Copies in other branches, tags, forks, or GitHub storage remain. Forge stops if the branch changed or files conflict."
+                else "Create a new commit on ${page.branch} that undoes ${page.id.take(7)}. Existing history stays available. Forge stops if the branch changed or files conflict.", "Confirm", required = if (remove) page.branch else null, dismiss = { action = null }) {
+                state.api.changeHistory(page.repo, page.branch, page.sha, page.id, remove) { state.saveRecovery(it, account) }; state.back()
+            }
+        }
+    } }
+}
+
+@Composable fun DeletedCommits(repo: String) {
+    val state = LocalForge.current
+    val groups = state.recoveries.filter { repo.isBlank() || it.s("repository") == repo }.groupBy { it.s("repository") }.toSortedMap()
+    Screen {
+        Note("Local records from this account's removal attempts. Forge saves commit IDs, not a permanent backup. Recovery works only while GitHub retains the objects. Removing the app removes these records.")
+        groups.forEach { (name, entries) -> Group(name) {
+            entries.sortedByDescending { it.s("created") }.forEach { item -> RowLink(item.s("message").lineSequence().first(), "${item.s("selected").take(7)} · ${item.s("branch")} · ${item.s("created").take(10)}") {
+                state.open(Page("restoreCommit", "Restore commit", name, id = item.s("id")))
+            } }
+        } }
+        if (groups.isEmpty()) Note("No saved commits. Commits removed through Forge on this device appear here.")
+    }
+}
+
+@Composable fun RestoreCommit(page: Page) {
+    val state = LocalForge.current
+    val item = state.recoveries.firstOrNull { it.s("id") == page.id } ?: return
+    var action by rememberSaveable { mutableStateOf<String?>(null) }
+    Screen {
+        Group { Note(item.s("message")); Note("${page.repo} · ${item.s("branch")}\n${item.s("selected")}") }
+        Loaded(page, load = {
+            state.api.cache?.clear()
+            try {
+                state.api.obj("/repos/${repository(page.repo)}/commits/${item.s("selected")}")
+                state.api.obj("/repos/${page.repo}/git/ref/heads/${item.s("branch")}").o("object").s("sha")
+            } catch (e: Exception) { error("Recovery unavailable: ${e.message}. The commit or branch may be gone, or your access may have changed.") }
+        }) { head ->
+            Note(if (head == item.s("oldHead")) "The branch already has its saved history; removal did not finish or it was restored." else "GitHub still has this commit.")
+            Button(enabled = head == item.s("newHead"), onClick = { action = "Restore saved history" }) { Text("Restore saved history") }
+            OutlinedButton(enabled = head != item.s("oldHead"), onClick = { action = "Reapply commit" }) { Text("Reapply commit") }
+            Note("Restore returns the branch to its saved history only if it has not moved since removal. Reapply creates a new commit while keeping newer work; conflicting files need desktop Git.")
+            action?.let { choice -> EditDialog(choice, emptyList(), "This changes ${item.s("branch")} in ${page.repo}. GitHub permissions and branch rules apply.", "Confirm", dismiss = { action = null }) {
+                state.api.restoreHistory(item, head, choice == "Reapply commit"); state.notice = if (choice == "Reapply commit") "Commit reapplied. Newer work was preserved." else "Saved branch history restored."
+            } }
+        }
+    }
+}
+
+@Composable private fun CommitDiff(text: String) {
+    androidx.compose.foundation.text.selection.SelectionContainer { Text(text, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, modifier = Modifier.horizontalScroll(rememberScrollState()).padding(12.dp)) }
+}

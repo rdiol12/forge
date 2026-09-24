@@ -36,14 +36,15 @@ import java.net.URI
             RowLink("Organizations", icon = R.drawable.ic_organization, color = Color(0xFFBC4C00)) { state.open(Page("orgs", "Organizations")) }
             RowLink("Starred", icon = R.drawable.ic_star, color = Color(0xFF9A6700)) { state.open(Page("repos", "Starred repositories", arg = "starred")) }
         }
+        Group("Favorites") {
+            state.favorites.forEach { repo -> RowLink(repo) { state.open(Page("repo", repo.substringAfter('/'), repo)) } }
+            RowLink("Add a repository", "Find a public or private repository", R.drawable.ic_telescope) { state.chooseTab(2) }
+        }
         Group("Builds & Downloads") {
             RowLink("Actions", "All your repositories", R.drawable.ic_workflow) { state.open(Page("ownedActions", "Your Actions")) }
             RowLink("Releases", "Releases from your favorites", R.drawable.ic_tag) { state.open(Page("releases", "Releases")) }
             RowLink("Downloads", "Saved files and transfer progress", R.drawable.ic_download) { state.open(Page("downloads", "Downloads")) }
-        }
-        Group("Favorites") {
-            state.favorites.forEach { repo -> RowLink(repo) { state.open(Page("repo", repo.substringAfter('/'), repo)) } }
-            RowLink("Add a repository", "Find a public or private repository", R.drawable.ic_telescope) { state.chooseTab(2) }
+            RowLink("Deleted commits", "Recovery records by repository", R.drawable.ic_repo) { state.open(Page("deletedCommits", "Deleted commits")) }
         }
         if (state.showCopilot) Group { RowLink("Copilot", "Open GitHub Copilot", R.drawable.ic_copilot) { state.link(context, "https://github.com/copilot") } }
     }
@@ -69,7 +70,7 @@ import java.net.URI
                 error?.let { ErrorText(it) }
                 TextButton(onClick = { state.link(context, "https://github.com/settings/tokens/new") }) { Text("Create a GitHub token") }
             }
-            Note("Classic tokens: repo and notifications. Fine-grained tokens: Actions and Contents read; add write permissions for Actions controls, issue/PR/Discussion changes, README and releases. Visibility changes require Administration write and repository admin access. Inbox requires OAuth or a classic token.")
+            Note("Classic tokens: repo and notifications; user for profile/follow changes, project for Projects, workflow for workflow-file edits. Fine-grained tokens: Actions and Contents read; add write permissions for Actions controls, issue/PR/Discussion changes, README and releases. Visibility changes require Administration write and repository admin access. Inbox requires OAuth or a classic token.")
         }
         Group("Appearance") { Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Text("Show Copilot shortcut", Modifier.weight(1f)); Switch(state.showCopilot, { state.showCopilot = it; state.prefs.edit().putBoolean("copilot", it).apply() }) } }
         Note("Forge ${BuildConfig.VERSION_NAME} · Native Android\nAn independent GitHub companion. Tokens stay encrypted on this device. Website sessions are separate. Downloaded files remain when you disconnect.")
@@ -104,26 +105,75 @@ private val avatars = android.util.LruCache<String, android.graphics.Bitmap>(40)
 }
 
 @Composable fun Profile(login: String) {
-    val state = LocalForge.current
-    Screen { Loaded(login, load = { require(validLogin(login)); state.api.obj("/users/$login") }) { user ->
+    val state = LocalForge.current; val mine = login.equals(state.account, true)
+    var editing by rememberSaveable { mutableStateOf(false) }
+    var highlights by remember(login) { mutableStateOf<JSONObject?>(null) }
+    var following by remember(login) { mutableStateOf<Boolean?>(null) }
+    var followingBusy by remember { mutableStateOf(false) }
+    LaunchedEffect(login, state.refresh, state.generation) {
+        if (state.connected) {
+            highlights = runCatching { state.api.profileHighlights(login) }.getOrNull()
+            if (!mine) following = runCatching { state.api.isFollowing(login) }.getOrNull()
+        }
+    }
+    Screen { Loaded(login, load = { require(validLogin(login)); state.api.obj(if (mine) "/user" else "/users/$login") }) { user ->
+        val organization = user.s("type") == "Organization"
         Group {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Avatar(login, 76); Text(user.s("name").ifBlank { login }, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text(login, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Avatar(login, 76)
+                    Column { Text(user.s("name").ifBlank { login }, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold); Text(login, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
                 if (user.s("bio").isNotBlank()) Text(user.s("bio"))
                 if (user.s("location").isNotBlank()) Text(user.s("location"), style = MaterialTheme.typography.bodySmall)
+                if (!organization) Row {
+                    TextButton(onClick = { state.open(Page("people", "Followers", id = login, arg = "followers")) }) { Text("${user.optInt("followers")} followers") }
+                    TextButton(onClick = { state.open(Page("people", "Following", id = login, arg = "following")) }) { Text("${user.optInt("following")} following") }
+                }
+                val badges = listOf("isEmployee" to "GitHub Staff", "isDeveloperProgramMember" to "Developer Program", "isGitHubStar" to "GitHub Star", "isCampusExpert" to "Campus Expert").filter { highlights?.optBoolean(it.first) == true }
+                if (badges.isNotEmpty()) Text(badges.joinToString(" ? ") { "? ${it.second}" }, color = MaterialTheme.colorScheme.primary)
+                if (mine) OutlinedButton(onClick = { editing = true }) { Text("Edit profile") }
+                else if (!organization && state.connected && following != null) OutlinedButton(enabled = !followingBusy, onClick = {
+                    followingBusy = true; state.task { try { state.api.change("/user/following/${accountPath(login)}", if (following == true) "DELETE" else "PUT"); following = following != true; state.refresh++ } finally { followingBusy = false } }
+                }) { Text(if (following == true) "Unfollow" else "Follow") }
             }
-            RowLink("${user.optInt("followers")} followers", icon = R.drawable.ic_person) { state.open(Page("people", "Followers", id = login, arg = "followers")) }
-            RowLink("${user.optInt("following")} following", icon = R.drawable.ic_person) { state.open(Page("people", "Following", id = login, arg = "following")) }
         }
         Group {
-            val mine = login.equals(state.account, true)
-            RowLink(if (mine) "Your repositories" else "Repositories", icon = R.drawable.ic_repo) { state.open(Page("repos", "Repositories", id = login, arg = if (mine) "owned" else if (user.s("type") == "Organization") "org" else "user")) }
-            RowLink("Starred repositories", icon = R.drawable.ic_star) { state.open(Page("repos", "Starred", id = login, arg = if (mine) "starred" else "stars")) }
-            RowLink("Organizations", icon = R.drawable.ic_organization) { state.open(Page("orgs", "Organizations", id = login)) }
+            RowLink(if (mine) "Your repositories" else "Repositories", icon = R.drawable.ic_repo) { state.open(Page("repos", "Repositories", id = login, arg = if (mine) "owned" else if (organization) "org" else "user")) }
+            if (!organization) {
+                RowLink("Starred repositories", icon = R.drawable.ic_star) { state.open(Page("repos", "Starred", id = login, arg = if (mine) "starred" else "stars")) }
+                RowLink("Organizations", icon = R.drawable.ic_organization) { state.open(Page("orgs", "Organizations", id = login)) }
+            }
             if (mine) RowLink("Your repository Actions", icon = R.drawable.ic_workflow) { state.open(Page("ownedActions", "Your Actions")) }
         }
+        if (!organization) {
+            Group("Pinned repositories") {
+                val pins = highlights?.o("pinnedItems")?.rows("nodes").orEmpty()
+                if (pins.isEmpty()) Note(if (state.connected) "No pinned repositories available." else "Connect GitHub to see pinned repositories.")
+                pins.forEach { pin -> RowLink(pin.s("nameWithOwner"), pin.s("description") + " ? ? ${pin.optInt("stargazerCount")}") { val repo = repository(pin.s("nameWithOwner")); state.open(Page("repo", repo.substringAfter('/'), repo)) } }
+            }
+            ProfileReadme(login, mine)
+        }
+        if (editing) {
+            val fields = listOf("name" to "Name", "bio" to "Bio", "blog" to "Website", "company" to "Company", "location" to "Location", "twitter_username" to "Social handle")
+            EditDialog("Edit profile", fields.map { Field(it.second, user.s(it.first), it.first == "bio") } + Field("Available for hire", user.optBoolean("hireable").toString(), toggle = true), "Bio: up to 160 characters. Profile write permission is required.", dismiss = { editing = false }) { values ->
+                state.api.editProfile(user, fields.mapIndexed { i, f -> f.first to values[i] }.toMap(), values.last().toBoolean())
+            }
+        }
     } }
+}
+
+@Composable private fun ProfileReadme(login: String, mine: Boolean) {
+    val state = LocalForge.current; val repo = "$login/$login"
+    var branch by remember(login) { mutableStateOf<Pair<String, String>?>(null) }
+    var error by remember(login) { mutableStateOf<String?>(null) }
+    LaunchedEffect(login, state.refresh) {
+        try {
+            val name = state.api.obj("/repos/${repository(repo)}").s("default_branch")
+            branch = name to state.api.obj("/repos/$repo/git/ref/heads/$name").o("object").s("sha")
+        } catch (e: Exception) { error = if (e.message?.contains("404") == true) "No profile README available." else e.message }
+    }
+    branch?.let { ReadmeCard(repo, it.first, it.second, mine) } ?: error?.let { Note(it) }
 }
 
 @Composable fun People(page: Page) {
@@ -138,7 +188,12 @@ private val avatars = android.util.LruCache<String, android.graphics.Bitmap>(40)
 
 @Composable fun Repositories(page: Page) {
     val state = LocalForge.current
-    Screen { Group { Paged(page, load = { number ->
+    Screen {
+        if (page.kind == "actionProjects") {
+            Note("Choose a project to see its workflow runs, jobs, and artifacts.")
+            Group("Favorite projects") { state.favorites.forEach { repo -> RowLink(repo, icon = R.drawable.ic_workflow) { state.open(Page("actions", "Actions", repo)) } } }
+        }
+        Group(if (page.kind == "actionProjects") "Your projects" else "") { Paged(page, load = { number ->
         val path = when (page.arg) {
             "owned", "starred" -> { require(state.connected) { "Connect GitHub in Settings to see your repositories." }; if (page.arg == "owned") "/user/repos" else "/user/starred" }
             "org" -> "/orgs/${accountPath(page.id)}/repos"
@@ -146,7 +201,10 @@ private val avatars = android.util.LruCache<String, android.graphics.Bitmap>(40)
             else -> "/users/${accountPath(page.id)}/repos"
         }
         state.api.list(path, number, mapOf("sort" to "updated", "direction" to "desc") + if (page.arg == "owned") mapOf("affiliation" to "owner", "visibility" to "all") else emptyMap())
-    }) { RepoRow(it) } } }
+    }) { repo ->
+        if (page.kind == "actionProjects") RowLink(repo.s("full_name"), repo.s("description"), R.drawable.ic_workflow) { state.open(Page("actions", "Actions", repo.s("full_name"))) }
+        else RepoRow(repo)
+    } } }
 }
 
 @Composable fun RepoRow(repo: JSONObject) {

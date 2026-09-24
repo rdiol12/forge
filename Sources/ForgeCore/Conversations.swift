@@ -161,12 +161,15 @@ extension GitHubClient {
         var request = try request("/graphql")
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: ["query": query, "variables": variables])
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["query": query, "variables": variables], options: .sortedKeys)
         return request
     }
 
     func graphQL<T: Decodable>(_ query: String, variables: [String: Any]) async throws -> T {
-        let (data, response) = try await session.data(for: graphQLRequest(query, variables: variables))
+        let request = try graphQLRequest(query, variables: variables)
+        let reading = query.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("query")
+        let (data, response) = try await (reading ? cachedData(for: request) : session.data(for: request))
+        if !reading { await clearCache() }
         try Self.validate(response)
         let result = try Self.decoder().decode(GraphQLResponse<T>.self, from: data)
         if let failure = result.errors?.first { throw GitHubError("GitHub: \(failure.message)") }

@@ -14,7 +14,7 @@ fun JSONObject.rows(key: String): List<JSONObject> = optJSONArray(key)?.objects(
 fun JSONArray.objects(): List<JSONObject> = (0 until length()).mapNotNull { optJSONObject(it) }
 fun json(vararg pairs: Pair<String, Any?>) = JSONObject().apply { pairs.forEach { (k, v) -> put(k, v ?: JSONObject.NULL) } }
 
-class GitHub(val token: String) {
+class GitHub(val token: String, val cache: APIMemoryCache? = null) {
     fun connection(uri: URI, accept: String = "application/vnd.github+json"): HttpURLConnection {
         require(trustedDownload(uri)) { "Unsupported GitHub download location." }
         return (uri.toURL().openConnection() as HttpURLConnection).apply {
@@ -30,28 +30,34 @@ class GitHub(val token: String) {
     suspend fun request(path: String, query: Map<String, String> = emptyMap(), method: String = "GET", body: JSONObject? = null): Any = withContext(Dispatchers.IO) {
         if (method != "GET") require(token.isNotBlank()) { "Connect GitHub in Settings before making changes." }
         var uri = apiUrl(path, query)
+        val reading = method == "GET" || (path == "/graphql" && body?.s("query")?.trimStart()?.startsWith("query") == true)
+        val key = "$token\n$uri\n$method\n${body ?: ""}"
+        val epoch = cache?.epoch ?: 0; val old = if (reading) cache?.value(key) else null
+        fun decoded(text: String): Any = if (text.isBlank()) JSONObject() else if (text.trimStart().startsWith("[")) JSONArray(text) else JSONObject(text)
+        if (old?.fresh == true) return@withContext decoded(old.bytes.toString(Charsets.UTF_8))
+        if (!reading) cache?.clear()
         repeat(6) {
             val c = connection(uri)
+            old?.etag?.let { c.setRequestProperty("If-None-Match", it) }
             try {
                 c.requestMethod = method
                 if (body != null) { c.doOutput = true; c.setRequestProperty("Content-Type", "application/json"); c.outputStream.use { it.write(body.toString().toByteArray()) } }
                 val status = c.responseCode
+                if (status == 304 && old != null) { cache?.store(key, old.bytes, c.getHeaderField("ETag") ?: old.etag, epoch, c.getHeaderField("Cache-Control") ?: old.control); return@withContext decoded(old.bytes.toString(Charsets.UTF_8)) }
                 if (status in listOf(301, 302, 307, 308) && method == "GET") {
                     val next = uri.resolve(c.getHeaderField("Location") ?: error("Missing redirect location."))
-                    require(next.host == "api.github.com" && trustedDownload(next)) { "Unexpected API redirect." }
-                    uri = next
+                    require(next.host == "api.github.com" && trustedDownload(next)) { "Unexpected API redirect." }; uri = next
                 } else {
                     if (status !in 200..299) throw failure(c)
-                    val text = c.inputStream.use { input ->
-                        val bytes = input.readLimited(16 * 1024 * 1024 + 1)
-                        require(bytes.size <= 16 * 1024 * 1024) { "Response is too large; narrow the search." }
-                        bytes.toString(Charsets.UTF_8)
-                    }
-                    return@withContext if (text.isBlank()) JSONObject() else if (text.trimStart().startsWith("[")) JSONArray(text) else JSONObject(text)
+                    val bytes = c.inputStream.use { it.readLimited(16_777_217) }
+                    require(bytes.size <= 16_777_216) { "Response is too large; narrow the search." }
+                    val result = decoded(bytes.toString(Charsets.UTF_8))
+                    if (reading && status == 200 && (result !is JSONObject || !result.has("errors"))) cache?.store(key, bytes, c.getHeaderField("ETag"), epoch, c.getHeaderField("Cache-Control") ?: "")
+                    return@withContext result
                 }
             } catch (e: java.io.IOException) {
-                throw IllegalStateException(if (method == "GET") "Could not reach GitHub. Check your connection and retry." else "Could not confirm the change. Refresh before submitting again; GitHub may have saved it.")
-            } finally { c.disconnect() }
+                throw IllegalStateException(if (reading) "Could not reach GitHub. Check your connection and retry." else "Could not confirm the change. Refresh before submitting again; GitHub may have saved it.")
+            } finally { c.disconnect(); if (!reading) cache?.clear() }
         }
         error("Too many GitHub redirects.")
     }
@@ -93,6 +99,7 @@ class GitHub(val token: String) {
     }
 
     suspend fun setVisibility(repo: String, expected: String, private: Boolean) {
+        cache?.clear()
         val path = "/repos/${repository(repo)}"; val current = obj(path)
         require(current.o("permissions").optBoolean("admin")) { "Repository admin permission is required." }
         require(expected in listOf("public", "private") && current.s("visibility") == expected) { "Visibility changed. Refresh before continuing." }
@@ -101,6 +108,7 @@ class GitHub(val token: String) {
     }
 
     suspend fun editIssue(repo: String, id: String, original: JSONObject, title: String, body: String, labels: List<String>?, assignees: List<String>?) {
+        cache?.clear()
         require(title.isNotBlank()); val path = "/repos/${repository(repo)}/issues/${positiveID(id)}"
         require(obj(path).s("updated_at") == original.s("updated_at")) { "Issue changed. Refresh to avoid overwriting another edit." }
         val patch = JSONObject()

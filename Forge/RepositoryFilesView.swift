@@ -65,7 +65,7 @@ struct RepositoryFilesView: View {
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $search, prompt: "Filter this folder")
         .task(id: store.account) { await load() }
-        .refreshable { await load(refreshBranch: true) }
+        .refreshable { await store.client.clearCache(); await load(refreshBranch: true) }
         .sheet(isPresented: $choosingBranch) {
             BranchPicker(repository: repository) { branch = $0; Task { await load() } }
         }
@@ -92,7 +92,7 @@ struct RepositoryFilesView: View {
 }
 
 @MainActor
-private struct BranchPicker: View {
+struct BranchPicker: View {
     let repository: Repository
     let select: (RepositoryBranch) -> Void
     @Environment(ForgeStore.self) private var store

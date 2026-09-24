@@ -63,11 +63,15 @@ class ForgeState(application: Application) : AndroidViewModel(application) {
     private var session by mutableStateOf(runCatching { JSONObject(vault.read("session")) }.getOrDefault(JSONObject()))
     private val token get() = session.s("token")
     val connected get() = token.isNotBlank()
-    val api get() = GitHub(token)
+    private var responseCache = APIMemoryCache()
+    val api get() = GitHub(token, responseCache)
     val account get() = if (connected) session.s("account") else ""
     var generation by mutableIntStateOf(0)
         private set
-    var refresh by mutableIntStateOf(0)
+    private var refreshValue by mutableIntStateOf(0)
+    var refresh: Int
+        get() = refreshValue
+        set(value) { responseCache.clear(); refreshValue = value }
     var tab by mutableIntStateOf(0)
     var notice by mutableStateOf<String?>(null)
     var signingIn by mutableStateOf(false)
@@ -75,8 +79,18 @@ class ForgeState(application: Application) : AndroidViewModel(application) {
     private val stacks = List(4) { mutableStateListOf<Page>() }
     val stack get() = stacks[tab]
     val drafts = mutableMapOf<String, EditorDraft>()
+    val issueDrafts = mutableMapOf<String, IssueDraft>()
     val favorites = mutableStateListOf<String>().apply { addAll(runCatching { JSONArray(prefs.getString("favorites", "[]")).let { a -> (0 until a.length()).map { repository(a.getString(it)) } } }.getOrDefault(emptyList())) }
     val downloads = Downloads(application)
+    val recoveries = mutableStateListOf<JSONObject>().apply { addAll(readRecoveries()) }
+
+    private fun readRecoveries(): List<JSONObject> = runCatching { JSONArray(prefs.getString("recoveries:${account.lowercase()}", "[]")).objects().filter(::validRecovery) }.getOrDefault(emptyList())
+    fun saveRecovery(item: JSONObject, account: String) {
+        require(connected && validLogin(account) && account == this.account && validRecovery(item)) { "The connected account changed. Reopen the commit." }
+        val next = listOf(item) + recoveries.filter { it.s("id") != item.s("id") }
+        check(prefs.edit().putString("recoveries:${account.lowercase()}", JSONArray(next).toString()).commit()) { "Couldn't save the recovery record. No branch was changed." }
+        recoveries.clear(); recoveries.addAll(next)
+    }
 
     fun open(page: Page) { stack.add(page) }
     fun back() { if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex) }
@@ -95,12 +109,14 @@ class ForgeState(application: Application) : AndroidViewModel(application) {
         downloads.cancelAll(); vault.save("oauth", "")
         val next = json("token" to candidate, "account" to login)
         vault.save("session", next.toString())
-        session = next; generation++; stacks.forEach { it.clear() }; drafts.clear()
+        responseCache = APIMemoryCache(); session = next; generation++; stacks.forEach { it.clear() }; drafts.clear(); issueDrafts.clear()
+        recoveries.clear(); recoveries.addAll(readRecoveries())
         notice = "Connected as $login"
     }
     fun disconnect() {
         downloads.cancelAll(); vault.save("session", ""); vault.save("oauth", "")
-        session = JSONObject(); generation++; stacks.forEach { it.clear() }; drafts.clear()
+        responseCache = APIMemoryCache(); session = JSONObject(); generation++; stacks.forEach { it.clear() }; drafts.clear(); issueDrafts.clear()
+        recoveries.clear()
     }
 
     suspend fun startLogin(context: Context) {

@@ -56,61 +56,6 @@ struct CreateBranchView: View {
 }
 
 @MainActor
-struct IssueComposer: View {
-    let repository: Repository?
-    let onCreated: (Conversation) -> Void
-    @Environment(ForgeStore.self) private var store
-    @Environment(\.dismiss) private var dismiss
-    @State private var destination = ""
-    @State private var title = ""
-    @State private var text = ""
-    @State private var busy = false
-    @State private var discard = false
-    @State private var error: String?
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                if !store.hasToken { ConnectGitHubNotice() }
-                else {
-                    Section("Repository") {
-                        TextField("owner/repository", text: $destination).textInputAutocapitalization(.never).autocorrectionDisabled().disabled(repository != nil || busy)
-                    }
-                    Section("New issue") {
-                        TextField("Title", text: $title, axis: .vertical).disabled(busy)
-                        TextEditor(text: $text).frame(minHeight: 180).accessibilityLabel("Issue description").disabled(busy)
-                    }
-                    if let error { ErrorNotice(message: error) }
-                    if busy { ProgressView("Creating issue...") }
-                }
-            }
-            .navigationTitle("New issue").navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { if title.isEmpty && text.isEmpty { dismiss() } else { discard = true } }.disabled(busy)
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") { Task { await create() } }
-                        .disabled(busy || !store.hasToken || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (try? Repository(destination)) == nil)
-                }
-            }
-            .confirmationDialog("Discard this issue draft?", isPresented: $discard, titleVisibility: .visible) { Button("Discard draft", role: .destructive) { dismiss() } }
-            .interactiveDismissDisabled(busy || !title.isEmpty || !text.isEmpty)
-            .onAppear { if let repository { destination = repository.fullName } }
-        }.inAppLinks()
-    }
-
-    private func create() async {
-        guard !busy else { return }; busy = true; error = nil
-        defer { busy = false }
-        do {
-            let created = try await store.client.createIssue(in: Repository(destination), title: title, body: text)
-            onCreated(created); dismiss()
-        } catch { self.error = error.localizedDescription }
-    }
-}
-
-@MainActor
 struct WatchConversation: View {
     let nodeID: String
     let refreshID: UUID
@@ -205,7 +150,7 @@ struct PullRequestActionsView: View {
         .navigationTitle("Review & merge").navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(busy)
         .task { await load() }
-        .refreshable { await load() }
+        .refreshable { await store.client.clearCache(); await load() }
         .sheet(isPresented: $review) {
             if let sha = pull?.head?.sha { ReviewComposer(repository: repository, number: number, sha: sha) { reviewed = true } }
         }
@@ -311,7 +256,7 @@ struct ReviewThreadsView: View {
             }
         }.navigationTitle("Review conversations").navigationBarTitleDisplayMode(.inline)
         .task { await load(reset: true) }
-        .refreshable { await load(reset: true) }
+        .refreshable { await store.client.clearCache(); await load(reset: true) }
     }
 
     private func load(reset: Bool) async {
@@ -355,7 +300,7 @@ private struct ReviewThreadView: View {
         }.navigationTitle("Review conversation").navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(busy)
         .task { await load(reset: true) }
-        .refreshable { await load(reset: true) }
+        .refreshable { await store.client.clearCache(); await load(reset: true) }
     }
 
     private func load(reset: Bool) async {

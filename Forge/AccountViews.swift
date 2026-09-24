@@ -35,7 +35,7 @@ struct PeopleListView: View {
         }.navigationTitle(collection.title)
         .searchable(text: $search, prompt: "Filter loaded people")
         .task(id: store.account) { await load(reset: true) }
-        .refreshable { await load(reset: true) }
+        .refreshable { await store.client.clearCache(); await load(reset: true) }
     }
 
     private func load(reset: Bool) async {
@@ -57,6 +57,10 @@ struct AccountProfileView: View {
     var rootProfile = false
     @Environment(ForgeStore.self) private var store
     @State private var profile: GitHubAccount?
+    @State private var highlights: ProfileHighlights?
+    @State private var editing = false
+    @State private var following: Bool?
+    @State private var selectedPeople: PeopleCollection?
     @State private var busy = false
     @State private var error: String?
     @State private var requestID = UUID()
@@ -80,10 +84,17 @@ struct AccountProfileView: View {
                 if let company = profile?.company, !company.isEmpty { Label(company, systemImage: "building.2") }
                 if let location = profile?.location, !location.isEmpty { Label(location, systemImage: "mappin.and.ellipse") }
                 if let followers = profile?.followers, let following = profile?.following {
-                    NavigationLink { PeopleListView(login: login, collection: .followers) } label: {
-                        Label("\(followers.formatted()) followers", systemImage: "person.2")
-                    }.font(.subheadline)
-                    NavigationLink("\(following.formatted()) following") { PeopleListView(login: login, collection: .following) }.font(.subheadline)
+                    HStack(spacing: 18) {
+                        Button { selectedPeople = .followers } label: { Label("\(followers.formatted()) followers", systemImage: "person.2") }
+                        Button("\(following.formatted()) following") { selectedPeople = .following }
+                    }.buttonStyle(.borderless).font(.subheadline).padding(.vertical, 6)
+                }
+                if let highlights, !highlights.badges.isEmpty {
+                    ScrollView(.horizontal) { HStack { ForEach(highlights.badges, id: \.self) { badge in Label(badge, systemImage: "seal.fill").font(.caption.bold()).padding(8).background(Color.blue.opacity(0.12), in: Capsule()) } } }
+                }
+                if ownProfile { Button("Edit profile") { editing = true } }
+                else if store.hasToken, profile?.type != "Organization", let following {
+                    Button(following ? "Unfollow" : "Follow") { Task { busy = true; do { try await store.client.follow(login: login, following: !following); await load() } catch { self.error = error.localizedDescription; busy = false } } }.disabled(busy)
                 }
                 if busy { ProgressView("Loading profile…") }
                 if let error {
@@ -100,10 +111,13 @@ struct AccountProfileView: View {
                     NavigationLink { OrganizationListView(login: ownProfile ? nil : login) } label: { WorkLabel("Organizations", icon: "organization", color: .orange) }
                 }
             }
+            if profile?.type != "Organization" { PinnedRepositoriesView(login: login, highlights: highlights); ProfileReadmeView(login: login) }
         }
         .navigationTitle(rootProfile ? "Profile" : login).navigationBarTitleDisplayMode(rootProfile ? .large : .inline)
         .task(id: store.account) { await load() }
-        .refreshable { await load() }
+        .refreshable { await store.client.clearCache(); await load() }
+        .navigationDestination(isPresented: Binding(get: { selectedPeople != nil }, set: { if !$0 { selectedPeople = nil } })) { if let selectedPeople { PeopleListView(login: login, collection: selectedPeople) } }
+        .sheet(isPresented: $editing) { if let profile { ProfileEditor(original: profile) { Task { await load() } } } }
     }
 
     private func load() async {
@@ -116,6 +130,10 @@ struct AccountProfileView: View {
             let result = try await store.client.profile(login: ownProfile ? nil : login)
             guard !Task.isCancelled, requestID == id, account == store.account else { return }
             profile = result
+            if result.type != "Organization", store.hasToken {
+                do { highlights = try await store.client.profileHighlights(login: login) } catch { self.error = error.localizedDescription }
+                if !ownProfile { following = try? await store.client.follows(login: login) }
+            }
         } catch { if !Task.isCancelled, requestID == id, account == store.account { self.error = error.localizedDescription } }
     }
 }
@@ -147,6 +165,14 @@ struct AccountRepositoriesView: View {
 
     var body: some View {
         List {
+            if showsActions && collection == .owned && !store.repositories.isEmpty {
+                Section("Favorite projects") {
+                    ForEach(store.repositories.filter { search.isEmpty || $0.fullName.localizedCaseInsensitiveContains(search) }) { repository in
+                        NavigationLink { ActionsView(repository: repository) } label: { RepositoryRow(repository: repository) }
+                    }
+                }
+            }
+
             Section {
                 ForEach(visible) { entry in
                     if let repository = try? Repository(entry.fullName) {
@@ -177,11 +203,11 @@ struct AccountRepositoriesView: View {
                 if showsActions { Text("Choose a repository to see its workflow runs, jobs, and artifacts.") }
             }
         }
-        .navigationTitle(showsActions ? "Repository Actions" : source.title)
+        .navigationTitle(showsActions ? "Actions" : source.title)
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $search, prompt: "Filter loaded repositories")
         .task(id: store.account) { await load(reset: true) }
-        .refreshable { await load(reset: true) }
+        .refreshable { await store.client.clearCache(); await load(reset: true) }
         .sheet(isPresented: $showingSettings, onDismiss: { Task { await load(reset: true) } }) { SettingsView() }
     }
 
@@ -246,7 +272,7 @@ struct OrganizationListView: View {
         }
         .navigationTitle("Organizations").navigationBarTitleDisplayMode(.inline)
         .task(id: store.account) { await load(reset: true) }
-        .refreshable { await load(reset: true) }
+        .refreshable { await store.client.clearCache(); await load(reset: true) }
         .sheet(isPresented: $showingSettings, onDismiss: { Task { await load(reset: true) } }) { SettingsView() }
     }
 

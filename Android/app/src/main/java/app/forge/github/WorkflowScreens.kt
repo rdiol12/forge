@@ -35,31 +35,7 @@ fun runStatus(run: JSONObject) = run.s("conclusion").ifBlank { run.s("status") }
     }
 }
 
-@Composable fun OwnedActions() {
-    val state = LocalForge.current; var page by remember { mutableIntStateOf(1) }; var filter by remember { mutableStateOf("All") }; var search by remember { mutableStateOf("") }
-    Screen {
-        OutlinedTextField(search, { search = it }, label = { Text("Filter repository, run, or branch") }, modifier = Modifier.fillMaxWidth())
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf("All", "Active", "Failed").forEach { label -> FilterChip(filter == label, { filter = label }, { Text(label) }) } }
-        Note("Latest 5 runs per owned repository · repository page $page. Open a repository's Actions for its full history.")
-        Loaded(page, load = {
-            require(state.connected) { "Connect GitHub in Settings to see your repositories' Actions." }
-            val repos = state.api.list("/user/repos", page, mapOf("affiliation" to "owner", "visibility" to "all", "sort" to "updated"))
-            val runs = mutableListOf<Pair<String, JSONObject>>(); val errors = mutableListOf<String>()
-            repos.forEach { repo ->
-                val name = repo.getString("full_name")
-                try { state.api.obj("/repos/$name/actions/runs", mapOf("per_page" to "5")).rows("workflow_runs").forEach { runs.add(name to it) } }
-                catch (e: kotlinx.coroutines.CancellationException) { throw e }
-                catch (e: Exception) { errors.add("$name: ${e.message}") }
-            }
-            Triple(repos, runs.sortedByDescending { it.second.s("created_at") }, errors)
-        }) { (repos, runs, errors) ->
-            Group { runs.filter { (repo, run) -> "$repo ${run.s("display_title")} ${run.s("head_branch")}".contains(search, true) && when (filter) { "Active" -> run.s("status") != "completed"; "Failed" -> runStatus(run) in listOf("failure", "timed_out", "action_required"); else -> true } }.forEach { (repo, run) -> RunRow(repo, run) } }
-            errors.forEach { ErrorText(it) }
-            Row { if (page > 1) TextButton(onClick = { page-- }) { Text("Previous repositories") }; if (repos.size == 30) TextButton(onClick = { page++ }) { Text("Next repositories") } }
-            Group("Repositories") { repos.forEach { repo -> RowLink(repo.s("full_name"), icon = R.drawable.ic_workflow) { state.open(Page("actions", "Actions", repo.s("full_name"))) } } }
-        }
-    }
-}
+@Composable fun OwnedActions() { Repositories(Page("actionProjects", "Actions", arg = "owned")) }
 
 @Composable fun RunDetail(page: Page) {
     val state = LocalForge.current; var control by remember { mutableStateOf<String?>(null) }
@@ -110,6 +86,7 @@ fun runStatus(run: JSONObject) = run.s("conclusion").ifBlank { run.s("status") }
 
 @Composable fun DownloadScreen() {
     val state = LocalForge.current; val context = LocalContext.current; var saving by remember { mutableStateOf<DownloadEntry?>(null) }
+    var deleting by remember { mutableStateOf<DownloadEntry?>(null) }
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         val entry = saving; saving = null
         if (uri != null && entry != null) state.task {
@@ -131,8 +108,13 @@ fun runStatus(run: JSONObject) = run.s("conclusion").ifBlank { run.s("status") }
                     if (entry.status == "Saved") Note("The local file was removed. Download it again to save or share it.")
                     TextButton(onClick = { state.task { state.downloads.retry(state.api, entry) } }) { Text("Try again") }
                 }
+                TextButton(onClick = { deleting = entry }) { Text("Delete downloaded file", color = MaterialTheme.colorScheme.error) }
             }
         } }
         Note("Archives and release assets continue through Android's download manager. Direct API files need Forge running. Try again starts a fresh request if a signed download URL expires.")
     }
+    deleting?.let { entry -> AlertDialog(onDismissRequest = { deleting = null }, title = { Text("Delete this download?") },
+        text = { Text("Remove ${entry.spec.name} from Forge. Exported copies and files on GitHub are kept.") },
+        confirmButton = { TextButton(onClick = { state.task { state.downloads.remove(entry); deleting = null } }) { Text("Delete") } },
+        dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } }) }
 }

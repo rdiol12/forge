@@ -86,7 +86,7 @@ private data class Tree(val branch: String, val sha: String, val path: String, v
 }
 
 @Composable fun FileScreen(page: Page) {
-    val state = LocalForge.current; var edit by rememberSaveable { mutableStateOf(false) }; var preview by rememberSaveable { mutableStateOf(page.title.endsWith(".md", true) || page.title.startsWith("README", true)) }
+    val state = LocalForge.current; var edit by rememberSaveable { mutableStateOf(page.id == "edit") }; var preview by rememberSaveable { mutableStateOf(page.title.endsWith(".md", true) || page.title.startsWith("README", true)) }
     var savedText by remember(page.sha) { mutableStateOf<String?>(null) }; var sha by remember(page.sha) { mutableStateOf(page.sha) }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -12,10 +12,12 @@ struct GitHubError: LocalizedError, Sendable {
 struct GitHubClient: Sendable {
     let token: String
     let session: URLSession
+    let cache: APIMemoryCache?
 
-    init(token: String = "", session: URLSession? = nil) {
+    init(token: String = "", session: URLSession? = nil, cache: APIMemoryCache? = nil) {
         self.token = token
         self.session = session ?? Self.sharedSession
+        self.cache = cache
     }
 
     // Private repository responses and credentials are never cached to disk.
@@ -58,7 +60,7 @@ struct GitHubClient: Sendable {
 
     func get<T: Decodable>(_ path: String, page: Int? = nil, count: Int = 100, query: [URLQueryItem] = []) async throws -> T {
         let query = query + (page.map { [URLQueryItem(name: "per_page", value: String(count)), URLQueryItem(name: "page", value: String($0))] } ?? [])
-        let (data, response) = try await session.data(for: request(path, query: query))
+        let (data, response) = try await cachedData(for: request(path, query: query))
         try Self.validate(response)
         return try Self.decoder().decode(T.self, from: data)
     }

@@ -55,7 +55,7 @@ data class OAuthAttempt(val state: String, val verifier: String) {
     fun challenge(): String = Base64.getUrlEncoder().withoutPadding().encodeToString(MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray()))
     fun authorize(client: String): URI {
         require(client.isNotBlank() && state.isNotBlank() && verifier.isNotBlank())
-        val params = mapOf("client_id" to client, "redirect_uri" to CALLBACK, "scope" to "repo notifications", "state" to state, "code_challenge" to challenge(), "code_challenge_method" to "S256", "prompt" to "select_account")
+        val params = mapOf("client_id" to client, "redirect_uri" to CALLBACK, "scope" to "repo notifications user project workflow", "state" to state, "code_challenge" to challenge(), "code_challenge_method" to "S256", "prompt" to "select_account")
         return URI("https://github.com/login/oauth/authorize?" + params.entries.joinToString("&") { "${encode(it.key)}=${encode(it.value)}" })
     }
     fun code(raw: String): String {

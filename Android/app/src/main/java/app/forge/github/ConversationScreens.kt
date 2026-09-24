@@ -28,7 +28,7 @@ private const val COMMENT = "node_id:id body user:author{login} created_at:creat
 }
 
 @Composable fun Conversations(page: Page) {
-    val state = LocalForge.current; var search by remember { mutableStateOf("") }; var query by remember { mutableStateOf("") }; var status by remember { mutableStateOf("open") }; var create by rememberSaveable { mutableStateOf(false) }
+    val state = LocalForge.current; var search by remember { mutableStateOf("") }; var query by remember { mutableStateOf("") }; var status by remember { mutableStateOf("open") }
     val kind = page.arg
     Screen {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -36,7 +36,7 @@ private const val COMMENT = "node_id:id body user:author{login} created_at:creat
             TextButton(onClick = { query = search.trim() }) { Text("Search") }
         }
         if (kind != "discussion") Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf("open", "closed", "all").forEach { value -> FilterChip(status == value, { status = value }, { Text(value.replaceFirstChar { it.uppercase() }) }) } }
-        if (kind == "issue" && page.repo.isNotEmpty() && state.connected) OutlinedButton(onClick = { create = true }) { Text("New issue") }
+        if (kind == "issue" && page.repo.isNotEmpty() && state.connected) OutlinedButton(onClick = { state.open(Page("newIssue", "Create new issue", page.repo)) }) { Text("New issue") }
         Group {
             val scope = if (page.repo.isNotBlank()) "repo:${page.repo}" else "involves:${state.account}"
             if (page.repo.isBlank() && !state.connected) Note("Connect GitHub in Settings to see your conversations.")
@@ -49,11 +49,7 @@ private const val COMMENT = "node_id:id body user:author{login} created_at:creat
             }) { ConversationRow(page.repo, kind, it) }
         }
     }
-    if (create) EditDialog("New issue", listOf(Field("Title"), Field("Description", multiline = true)), "Create an issue in ${page.repo}.", "Create issue", dismiss = { create = false }) { values ->
-        require(values[0].isNotBlank()) { "Enter an issue title." }
-        val issue = state.api.change("/repos/${repository(page.repo)}/issues", body = json("title" to values[0].trim(), "body" to values[1]))
-        state.open(Page("issue", "#${issue.optLong("number")}", page.repo, issue.s("number")))
-    }
+
 }
 
 @Composable fun ConversationRow(repo: String, kind: String, item: JSONObject) {
