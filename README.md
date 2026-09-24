@@ -55,7 +55,7 @@ Sources: [Release assets](https://docs.github.com/en/rest/releases/assets), [Act
 
 ### Download a CI build
 
-The private [forge repository](https://github.com/rdiol12/forge) builds iOS on macOS and Android on Linux. Download `Forge-unsigned.ipa` and `Forge-android.apk` together from [Releases](https://github.com/rdiol12/forge/releases). Sign the IPA with your sideloading tool; the APK is signed and ready to install. You must have access to the private repository to download its releases.
+The public [Forge repository](https://github.com/rdiol12/forge) builds iOS on macOS and Android on Linux. Download `Forge-unsigned.ipa` and `Forge-android.apk` together from the public [Releases](https://github.com/rdiol12/forge/releases). Sign the IPA with your sideloading tool; the APK is signed and ready to install. Release downloads do not require signing in.
 
 [Build and publish iOS and Android](https://github.com/rdiol12/forge/actions/workflows/ios.yml) runs on pushes to `main`, version tags (`v*`), and manual **Run workflow** requests. Documentation-only branch pushes are skipped. Both apps share the same source commit and build number. Each run:
 
@@ -63,12 +63,12 @@ The private [forge repository](https://github.com/rdiol12/forge) builds iOS on m
 2. Builds the Release iOS device target with Xcode 26.3 and signing disabled. Native Liquid Glass navigation is available on iOS 26; earlier systems use their native appearance.
 3. Builds and launches an iPhone simulator and saves light/dark Home screenshots plus a native issue screenshot as a workflow artifact. The screenshot simulator has four public favorite repositories; installed IPAs still start empty.
 4. Packages the app as `Payload/Forge.app` inside an IPA and checks its ZIP integrity and SHA-256 checksum.
-5. In parallel, tests/lints Android, builds the signed APK, checks native screens and Keystore on an emulator, and verifies real private repository/artifact downloads. It also launches the optimized release APK and verifies its signature and checksum.
-6. Keeps both apps and their checks as Actions artifacts. After **both jobs pass**, one publishing job checks matching app versions and creates **one private release** containing the IPA, APK and a shared `SHA256SUMS`. The release stays a draft until all three files have uploaded successfully. If either build fails, nothing is published.
+5. In parallel, tests/lints Android, builds the signed APK, checks native screens and Keystore on an emulator, and verifies authenticated repository reads and real release/artifact downloads. It also launches the optimized release APK and verifies its signature and checksum.
+6. Keeps both apps and their checks as Actions artifacts. After **both jobs pass**, one publishing job checks matching app versions and creates **one public release** containing the IPA, APK and a shared `SHA256SUMS`. The release stays a draft until all three files have uploaded successfully. If either build fails, nothing is published.
 
 Branch/manual runs create prereleases named `build-<run>-<attempt>`. Version tags create normal releases. Existing release tags are never overwritten; choose a new version tag for another published version. A failed upload may leave an unpublished draft to remove before retrying that version tag. Build logs are retained on failure.
 
-No Apple credentials are needed. Android uses the existing `ANDROID_KEYSTORE` and `ANDROID_KEY_PASSWORD` secrets for its persistent signing key. The workflow uses GitHub's temporary token; only the final publishing job has repository contents write permission. The IPA is an **unsigned** device build for later signing, not an App Store/TestFlight upload or an immediately installable IPA. GitHub-hosted runner usage is charged against the account's Actions allowance.
+No Apple credentials are needed. Android uses the existing `ANDROID_KEYSTORE` and `ANDROID_KEY_PASSWORD` secrets for its persistent signing key. The workflow uses GitHub's temporary token; only the final publishing job has repository contents write permission. The IPA is an **unsigned** device build for later signing, not an App Store/TestFlight upload or an immediately installable IPA.
 
 ### Build locally
 
@@ -149,7 +149,7 @@ swiftc -parse-as-library Sources/ForgeCore/*.swift Scripts/CheckNative.swift -o 
 
 On 2026-09-23 the authenticated live check read cli/cli code, 30 issues, 30 pull requests, 26 changed files, 7 reviews, 11 review comments, and community Discussions with cursor pagination, comments, and replies. iPhone UI verification is performed separately in CI.
 
-The authenticated native check also reads watch state, PR merge settings, review threads, comments, and viewer permissions. Mutations are tested with mocked responses: the check never creates issues, submits reviews, changes subscriptions, marks notifications read, creates branches, or merges a real PR. Add `--forge-build` to verify the private Forge workflow, test steps, artifact download, release IPA, and checksum using the app's API client; files are saved under ignored `dist/api-check-build-<number>/`.
+The authenticated native check also reads watch state, PR merge settings, review threads, comments, and viewer permissions. Mutations are tested with mocked responses: the check never creates issues, submits reviews, changes subscriptions, marks notifications read, creates branches, or merges a real PR. Add `--forge-build` to verify the Forge workflow, test steps, artifact download, release IPA, and checksum using the app's API client; files are saved under ignored `dist/api-check-build-<number>/`.
 
 ## Additional permissions and API references
 

@@ -165,7 +165,7 @@ jobs:
           FORGE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: ./gradlew --no-daemon testDebugUnitTest lintRelease assembleRelease assembleDebug assembleDebugAndroidTest --console=plain
 
-      - name: Verify native Android screens, secure storage, and private GitHub reads
+      - name: Verify native Android screens, secure storage, and authenticated GitHub reads
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
         env:
           GH_TOKEN: ${{ github.token }}
@@ -265,7 +265,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(gh api "repos/$GITHUB_REPOSITORY" --jq .private)" = true
+          test "$(gh api "repos/$GITHUB_REPOSITORY" --jq .visibility)" = public
           test -n "$VERSION"
           test "$VERSION" = "$ANDROID_VERSION"
           gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "$IPA_ARTIFACT" --dir artifacts/ios
@@ -278,7 +278,7 @@ jobs:
           sha256sum Forge-unsigned.ipa Forge-android.apk > SHA256SUMS
           sha256sum -c SHA256SUMS
 
-      - name: Publish one private release with IPA and APK
+      - name: Publish one public release with IPA and APK
         shell: bash
         run: |
           set -euo pipefail
@@ -295,7 +295,9 @@ jobs:
           - **iOS 17+:** download Forge-unsigned.ipa and sign it with your sideloading tool before installing. No Apple certificate or provisioning profile is included.
           - **Android 8.0+:** download and install Forge-android.apk. It uses Forge's persistent signing key so future builds can update the same app.
 
-          Native Home, Inbox, Explore and Profile; private repositories and owned-repository Actions; jobs, logs, artifacts and downloads; releases with per-file download counts; branch switching, syntax-colored code, README editing, native issues, Discussions, PR reviews and confirmed merges. Repository visibility and release changes require the appropriate GitHub permissions.
+          New in 0.8: repository cards and menus; README images, tables and editing; profile pins, followers and account editing; native issue creation with assignees, labels, milestones and Projects; Actions grouped by repository; releases sorted newest first; response caching and local download deletion. Includes branch switching, syntax-colored code, artifacts, per-release-file download counts, native Discussions, PR reviews and confirmed merges.
+
+          Commit history supports undo or removal with confirmation, plus Deleted commits grouped by repository. Recovery saves commit SHAs locally on this device, without creating backup tags. Restore or reapply works only while GitHub still retains the required objects; retention is not guaranteed. Repository, profile, release and history changes require the appropriate GitHub permissions.
 
           Manual token sign-in is available. Browser sign-in still needs GitHub OAuth registration and backend activation. GitHub does not expose Actions-artifact download counts. No push alerts or merge-conflict editor yet.
 

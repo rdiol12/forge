@@ -20,7 +20,7 @@ struct CheckNative {
             let commits: [HistoryCommit] = try await client.get("/repos/\(repository.fullName)/commits", page: 1, count: 30, query: [.init(name: "sha", value: ref.object.sha)])
             precondition(!commits.isEmpty)
             for field in ["Assignees", "Labels", "Milestone"] { _ = try await client.issueOptions(in: repository, kind: field, page: 1, cursor: nil) }
-            print("PASS: private rendered README, authenticated PNG, actual pinned repositories (\(profile.pinnedItems.nodes.count)), paginated commits, assignees, labels and milestones. No writes.")
+            print("PASS: rendered README, authenticated PNG, actual pinned repositories (\(profile.pinnedItems.nodes.count)), paginated commits, assignees, labels and milestones. No writes.")
             do { _ = try await client.issueOptions(in: repository, kind: "Project", page: 1); print("PASS: linked Projects readable.") }
             catch { if error.localizedDescription.contains("read:project") { print("LIMIT: connected developer token lacks read:project; app correctly reports the permission error.") } else { throw error } }
             return
@@ -28,7 +28,7 @@ struct CheckNative {
         if CommandLine.arguments.contains("--workspace") {
             let repository = try Repository("rdiol12/forge")
             let settings: RepositorySettings = try await client.get("/repos/\(repository.fullName)")
-            precondition(settings.visibility == "private")
+            precondition(settings.visibility == "public")
             let people = try await client.people(login: "octocat", collection: .following, page: 1)
             precondition(!people.isEmpty)
             let branches = try await client.branches(in: repository, page: 1)
@@ -51,8 +51,8 @@ struct CheckNative {
                 let log = try await client.jobLog(in: repository, jobID: job.id)
                 precondition(!log.isEmpty)
             }
-            print("PASS: Native following list, private branch files, identical immutable README download, repository ZIP, successful-build query and native job logs.")
-            print("PASS: Repository remains private; no writes were made.")
+            print("PASS: Native following list, branch files, identical immutable README download, repository ZIP, successful-build query and native job logs.")
+            print("PASS: Repository remains public; no writes were made.")
             return
         }
         if CommandLine.arguments.contains("--account") {
@@ -68,20 +68,20 @@ struct CheckNative {
                 if foundForge || repositories.count < 30 { break }
                 page += 1
             }
-            guard !profile.login.isEmpty, foundForge else { throw GitHubError("The native account repository list did not include the private Forge repository.") }
+            guard !profile.login.isEmpty, foundForge else { throw GitHubError("The native account repository list did not include the Forge repository.") }
             let stars = try await client.accountRepositories(.starred, page: 1)
             let organizations = try await client.organizations(page: 1)
             let repository = try Repository("rdiol12/forge")
             let runs = try await client.runs(in: repository)
-            guard let run = runs.first else { throw GitHubError("The private repository has no workflow runs.") }
+            guard let run = runs.first else { throw GitHubError("The Forge repository has no workflow runs.") }
             let jobs = try await client.jobs(in: repository, run: run, page: 1)
             let artifacts = try await client.artifacts(in: repository, runID: run.id, page: 1)
-            print("PASS: Native profile, \(count) own repositories across \(page) pages including private Forge, \(stars.count) stars, and \(organizations.count) visible organizations.")
+            print("PASS: Native profile, \(count) own repositories across \(page) pages including Forge, \(stars.count) stars, and \(organizations.count) visible organizations.")
             print("PASS: Own repository Actions: \(runs.count) runs, \(jobs.count) jobs, \(artifacts.count) artifacts; no Favorites state required.")
             return
         }
         if CommandLine.arguments.contains("--forge-build") {
-            guard !token.isEmpty else { throw GitHubError("The private build check needs --authenticated and a developer token on stdin.") }
+            guard !token.isEmpty else { throw GitHubError("The build check needs --authenticated and a developer token on stdin.") }
             try await checkForgeBuild(client)
             return
         }

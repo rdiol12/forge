@@ -133,13 +133,13 @@ class AppTest {
         } finally { vault.save("session", original); preferences.edit().remove("recoveries:forge-recovery-test").commit() }
     }
 
-    @Test fun privateRepositoryWorkflowsReleasesAndPinnedCodeAreReadable() = runBlocking {
+    @Test fun authenticatedRepositoryWorkflowsReleasesAndPinnedCodeAreReadable() = runBlocking {
         val file = File(context.filesDir, "live-token")
         assumeTrue("CI supplies an ephemeral read token for this check", file.exists())
         val api = GitHub(file.readText().trim())
         val repo = "rdiol12/forge"
         val info = api.obj("/repos/$repo")
-        assertTrue(info.optBoolean("private"))
+        assertEquals("Forge builds and releases are public", "public", info.getString("visibility"))
         val branch = info.getString("default_branch")
         val sha = api.obj("/repos/$repo/git/ref/heads/$branch").o("object").getString("sha")
         assertTrue(validSha(sha))
