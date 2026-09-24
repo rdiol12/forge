@@ -19,6 +19,20 @@ import org.junit.runner.RunWith
 class NavigationTest {
     @get:Rule val compose = createComposeRule()
 
+    @Test fun conflictEditorRequiresAnExplicitChoiceAndKeepsEditedText() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val state = ForgeState(context.applicationContext as Application)
+        val before = GitTreeEntry("README.md", "100644", "blob", "a".repeat(40), 4)
+        val conflict = HistoryConflict("README.md", before, before.copy(sha = "b".repeat(40)), before.copy(sha = "c".repeat(40)), "base", "requested", "current")
+        var result: HistoryResolution? = null
+        compose.setContent { ForgeTheme { androidx.compose.runtime.CompositionLocalProvider(LocalForge provides state) { HistoryConflictDialog(conflict, dismiss = {}, resolved = { result = it }) } } }
+        compose.onNodeWithText("Use resolution").assertIsNotEnabled()
+        compose.onNodeWithText("Edit final file").performScrollTo().performClick()
+        compose.onNodeWithText("Final file contents").performScrollTo().performTextReplacement("# My reviewed README\nKeep these changes.")
+        compose.onNodeWithText("Use resolution").performClick()
+        compose.runOnIdle { assertEquals(HistoryResolution("edit", "# My reviewed README\nKeep these changes."), result) }
+    }
+
     @Test fun failedDownloadCanBeRemovedWithoutALocalFile() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val state = ForgeState(context.applicationContext as Application)

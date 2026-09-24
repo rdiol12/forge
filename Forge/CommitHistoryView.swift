@@ -60,6 +60,8 @@ struct CommitDetailView: View {
     @State private var error: String?
     @State private var action: String?
     @State private var typed = ""
+    @State private var conflict: HistoryConflict?
+    @State private var resolutions: [String: HistoryResolution] = [:]
     var body: some View {
         List {
             if let commit {
@@ -80,9 +82,9 @@ struct CommitDetailView: View {
                 } header: { Text("Changed files") }
                 if canWrite {
                     Section {
-                        Button("Undo changes", systemImage: "arrow.uturn.backward") { action = "Undo changes" }
-                        Button("Remove from history", systemImage: "trash", role: .destructive) { action = "Remove from history" }
-                    } footer: { Text("Undo adds a new commit. Removing rewrites later commits. Conflicting edits, root commits, and merge rewrites require desktop Git. Repository rules still apply.") }
+                        Button("Undo changes", systemImage: "arrow.uturn.backward") { resolutions = [:]; action = "Undo changes" }
+                        Button("Remove from history", systemImage: "trash", role: .destructive) { resolutions = [:]; action = "Remove from history" }
+                    } footer: { Text("Undo adds a new commit. Removing rewrites later commits. Separate text edits merge automatically. Overlapping files open a conflict editor. Root commits and merge rewrites require desktop Git. Repository rules still apply.") }
                     .disabled(busy || commit.parents.count != 1)
                 }
             }
@@ -102,6 +104,9 @@ struct CommitDetailView: View {
                     ToolbarItem(placement: .cancellationAction) { Button("Cancel") { action = nil; typed = "" }.disabled(busy) }
                     ToolbarItem(placement: .confirmationAction) { Button("Confirm", role: .destructive) { Task { await change() } }.disabled(busy || (action == "Remove from history" && typed != branch.name)) }
                 }.interactiveDismissDisabled(busy)
+                .sheet(item: $conflict) { item in
+                    HistoryConflictEditor(conflict: item) { resolutions[item.id] = $0; error = "Resolution saved. Confirm again to continue; your branch has not changed." }
+                }
             }
         }
     }
@@ -117,7 +122,8 @@ struct CommitDetailView: View {
     private func change() async {
         busy = true; error = nil; defer { busy = false }
         let account = store.account
-        do { _ = try await store.client.changeHistory(in: repository, branch: branch, selected: sha, remove: action == "Remove from history", saveRecovery: { entry in try await store.saveRecovery(entry, account: account) }); action = nil; onChanged(); dismiss() }
+        do { _ = try await store.client.changeHistory(in: repository, branch: branch, selected: sha, remove: action == "Remove from history", resolutions: resolutions, saveRecovery: { entry in try await store.saveRecovery(entry, account: account) }); action = nil; onChanged(); dismiss() }
+        catch let item as HistoryConflict { conflict = item; error = item.localizedDescription }
         catch { self.error = error.localizedDescription }
     }
 }
@@ -148,6 +154,8 @@ struct DeletedCommitsView: View {
 private struct CommitRecoveryView: View {
     let entry: CommitRecovery
     @Environment(ForgeStore.self) private var store
+    @State private var conflict: HistoryConflict?
+    @State private var resolutions: [String: HistoryResolution] = [:]
     @State private var head: String?
     @State private var available = false
     @State private var busy = false
@@ -166,10 +174,11 @@ private struct CommitRecoveryView: View {
                 Section {
                     Button("Restore saved history") { action = "Restore saved history" }.disabled(head != entry.newHead || busy)
                     Button("Reapply commit") { action = "Reapply commit" }.disabled(head == entry.oldHead || busy)
-                } footer: { Text("Restore returns the branch to its saved history only if it has not moved since removal. Reapply creates a new commit while keeping newer work; conflicting files need desktop Git.") }
+                } footer: { Text("Restore returns the branch to its saved history only if it has not moved since removal. Reapply creates a new commit. Separate text edits merge automatically; overlapping files open a conflict editor.") }
             }
             Button("Check again") { Task { await check() } }.disabled(busy)
         }.navigationTitle("Restore commit").task { await check() }
+        .sheet(item: $conflict) { item in HistoryConflictEditor(conflict: item) { resolutions[item.id] = $0; message = "Resolution saved. Tap Reapply commit and confirm again to continue." } }
         .confirmationDialog(action ?? "Restore commit", isPresented: Binding(get: { action != nil }, set: { if !$0 { action = nil } }), titleVisibility: .visible) {
             if let selectedAction = action { Button("Confirm") { Task { await restore(reapply: selectedAction == "Reapply commit") } } }
         } message: { Text("This changes \(entry.branch) in \(entry.repository). GitHub permissions and branch rules apply.") }
@@ -187,7 +196,57 @@ private struct CommitRecoveryView: View {
     }
     private func restore(reapply: Bool) async {
         guard let head else { return }; busy = true
-        do { try await store.client.restoreHistory(in: Repository(entry.repository), recovery: entry, expected: head, reapply: reapply); await check(); message = reapply ? "Commit reapplied. Newer work was preserved." : "Saved branch history restored." }
+        do { try await store.client.restoreHistory(in: Repository(entry.repository), recovery: entry, expected: head, reapply: reapply, resolutions: resolutions); await check(); message = reapply ? "Commit reapplied." : "Saved branch history restored." }
+        catch let item as HistoryConflict { conflict = item; message = item.localizedDescription }
         catch { message = error.localizedDescription }; busy = false
+    }
+}
+
+
+@MainActor
+struct HistoryConflictEditor: View {
+    let conflict: HistoryConflict
+    let resolved: (HistoryResolution) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var version = 0
+    @State private var choice = ""
+    @State private var text: String
+    init(conflict: HistoryConflict, resolved: @escaping (HistoryResolution) -> Void) {
+        self.conflict = conflict; self.resolved = resolved
+        _text = State(initialValue: conflict.currentText ?? "")
+    }
+    private var entry: GitTreeEntry? { version == 0 ? conflict.current : version == 1 ? conflict.requested : conflict.before }
+    private var source: String? { version == 0 ? conflict.currentText : version == 1 ? conflict.requestedText : conflict.baseText }
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text(conflict.path).font(.headline).textSelection(.enabled)
+                    Text("No branch was changed. Current is the result built so far; Requested is the complete file from the change being applied. Choosing a whole version can retain changes from the removed commit or discard other edits. Review the file before continuing.").font(.footnote)
+                }
+                Section("Compare versions") {
+                    Picker("Version", selection: $version) { Text("Current").tag(0); Text("Requested").tag(1); Text("Base").tag(2) }.pickerStyle(.segmented)
+                    if let source { CodeTextView(text: source, filename: conflict.path).frame(height: 260) }
+                    else if let entry { Text("Preview unavailable for this file type or size. Revision: \(entry.sha)").font(.caption).textSelection(.enabled) }
+                    else { Text("This version does not contain the file.").foregroundStyle(.secondary) }
+                }
+                Section("Final result") {
+                    Picker("Resolution", selection: $choice) {
+                        Text("Choose?").tag("")
+                        Text(conflict.current == nil ? "Keep file deleted" : "Keep current file").tag("current")
+                        Text(conflict.requested == nil ? "Delete file as requested" : "Use requested file").tag("requested")
+                        if conflict.canEdit { Text("Edit final file").tag("edit") }
+                    }
+                    if choice == "edit" { TextEditor(text: $text).font(.system(.body, design: .monospaced)).frame(minHeight: 260).accessibilityLabel("Final file contents") }
+                    Text("The branch is updated only after all conflicts are resolved and you confirm again.").font(.footnote).foregroundStyle(.secondary)
+                }
+            }.navigationTitle("Resolve file conflict").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Use resolution") {
+                    resolved(choice == "current" ? .current : choice == "requested" ? .requested : .edited(text)); dismiss()
+                }.disabled(choice.isEmpty || (choice == "edit" && (text.utf8.count > 1_048_576 || text.utf8.contains(0)))) }
+            }
+        }
     }
 }

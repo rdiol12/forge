@@ -5,6 +5,16 @@ import org.junit.Test
 import java.net.URI
 
 class CoreTest {
+    @Test fun separateReadmeEditsMergeButOverlappingEditsNeedAChoice() {
+        val base = "# Project\n\nInstall\nold command\n\nLicense\nMIT\n"
+        val current = base.replace("# Project", "# Forge")
+        val changed = base.replace("old command", "new command")
+        assertEquals(current.replace("old command", "new command"), GitHistory.mergeText(base, current, changed))
+        assertNull(GitHistory.mergeText(base, base.replace("old command", "mine"), base.replace("old command", "theirs")))
+        assertEquals(changed, GitHistory.mergeText(base, changed, changed))
+        assertNull(GitHistory.mergeText("a\nb", "a\nx\nb", "a\ny\nb"))
+        assertEquals("A\r\nb\r\nC", GitHistory.mergeText("a\r\nb\r\nc", "A\r\nb\r\nc", "a\r\nb\r\nC"))
+    }
     @Test fun offlineCopiesRejectUnsafePathsAndOversizedContent() {
         val copy = json("repository" to "owner/repo", "branch" to "main", "sha" to "a".repeat(40), "saved" to 1L, "omitted" to 2, "files" to json("docs/README.md" to "hello"))
         assertTrue(validOfflineCopy(copy))

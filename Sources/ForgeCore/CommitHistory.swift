@@ -19,6 +19,19 @@ struct HistoryCommit: Decodable, Identifiable, Sendable {
 
 struct GitTreeEntry: Codable, Equatable, Sendable {
     let path: String; let mode: String; let type: String; let sha: String
+    var size: Int? = nil
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.path == rhs.path && lhs.mode == rhs.mode && lhs.type == rhs.type && lhs.sha == rhs.sha }
+}
+
+enum HistoryResolution: Sendable { case current, requested, edited(String) }
+
+struct HistoryConflict: LocalizedError, Identifiable, Sendable {
+    let path: String
+    let before: GitTreeEntry?; let requested: GitTreeEntry?; let current: GitTreeEntry?
+    let baseText: String?; let requestedText: String?; let currentText: String?
+    var id: String { ([path] + [before, requested, current].map { $0.map { "\($0.mode):\($0.type):\($0.sha)" } ?? "absent" }).joined(separator: "\0") }
+    var canEdit: Bool { baseText != nil && requestedText != nil && currentText != nil && before?.mode == requested?.mode && requested?.mode == current?.mode }
+    var errorDescription: String? { "Review conflicting changes in \(path). No branch was changed. Choose or edit the final file, then confirm again." }
 }
 
 struct CommitRecovery: Codable, Identifiable, Sendable {
@@ -35,10 +48,11 @@ struct CommitRecovery: Codable, Identifiable, Sendable {
 
 enum GitHistory {
     static func validSHA(_ sha: String) -> Bool { sha.range(of: "^[a-fA-F0-9]{40}$", options: .regularExpression) != nil }
-    // ponytail: whole-file preimage checks; overlapping edits need desktop Git's three-way merge.
+    // The API caller resolves text conflicts first; this guard protects all unresolved tree changes.
     static func apply(from before: [String: GitTreeEntry], to after: [String: GitTreeEntry], onto current: [String: GitTreeEntry]) throws -> [String: GitTreeEntry] {
         var result = current
         for path in Set(before.keys).union(after.keys) where before[path] != after[path] {
+            if current[path] == after[path] { continue }
             guard current[path] == before[path] else { throw GitHubError("Conflicting changes in \(path). No branch was changed. Resolve this with desktop Git.") }
             result[path] = after[path]
         }
@@ -49,6 +63,26 @@ enum GitHistory {
             }
         }
         return result
+    }
+    static func mergeText(base: String, current: String, changed: String) -> String? {
+        func same(_ a: String, _ b: String) -> Bool { a.utf8.elementsEqual(b.utf8) }
+        if same(base, current) { return changed }; if same(base, changed) || same(current, changed) { return current }
+        let original = base.components(separatedBy: "\n")
+        // ponytail: merge one changed span per side; complex overlapping spans go to the native conflict editor.
+        func edit(_ text: String) -> (start: Int, end: Int, lines: [String]) {
+            let lines = text.components(separatedBy: "\n"); var start = 0
+            while start < min(original.count, lines.count), same(original[start], lines[start]) { start += 1 }
+            var end = original.count, tail = lines.count
+            while end > start, tail > start, same(original[end - 1], lines[tail - 1]) { end -= 1; tail -= 1 }
+            return (start, end, Array(lines[start..<tail]))
+        }
+        let a = edit(current), b = edit(changed)
+        guard !(a.start < b.end && b.start < a.end),
+              !(a.start == a.end && a.start >= b.start && a.start <= b.end),
+              !(b.start == b.end && b.start >= a.start && b.start <= a.end) else { return nil }
+        var result = original
+        for change in [a, b].sorted(by: { $0.start > $1.start }) { result.replaceSubrange(change.start..<change.end, with: change.lines) }
+        return result.joined(separator: "\n")
     }
     static func packet(_ value: String) -> Data { let bytes = Data(value.utf8); return Data(String(format: "%04x", bytes.count + 4).utf8) + bytes }
     static func pushPacket(branch: String, old: String, new: String) throws -> Data {
@@ -78,7 +112,40 @@ private struct GitObjectCommit: Decodable {
 }
 
 extension GitHubClient {
-    func changeHistory(in repository: Repository, branch: RepositoryBranch, selected: String, remove: Bool, saveRecovery: (@Sendable (CommitRecovery) async throws -> Void)? = nil) async throws -> String {
+    private func mergeHistory(path: String, before: [String: GitTreeEntry], after: [String: GitTreeEntry], current: [String: GitTreeEntry], resolutions: [String: HistoryResolution]) async throws -> [String: GitTreeEntry] {
+        var expected = before, desired = after
+        for file in Set(before.keys).union(after.keys).sorted() where before[file] != after[file] && current[file] != before[file] && current[file] != after[file] {
+            func text(_ entry: GitTreeEntry?) async throws -> String? {
+                guard let entry, entry.type == "blob", ["100644", "100755"].contains(entry.mode), let size = entry.size, (0...1_048_576).contains(size) else { return nil }
+                guard GitHistory.validSHA(entry.sha) else { throw GitHubError("Invalid conflict file revision.") }
+                struct Blob: Decodable { let content: String; let encoding: String; let size: Int }
+                let blob: Blob = try await get("\(path)/git/blobs/\(entry.sha)")
+                guard blob.encoding == "base64", blob.size == size, let data = Data(base64Encoded: blob.content.filter { !$0.isWhitespace }), data.count == size else { throw GitHubError("Incomplete conflict file. No branch was changed.") }
+                return data.contains(0) ? nil : String(data: data, encoding: .utf8)
+            }
+            let baseText = try await text(before[file]), requestedText = try await text(after[file]), currentText = try await text(current[file])
+            let conflict = HistoryConflict(path: file, before: before[file], requested: after[file], current: current[file], baseText: baseText, requestedText: requestedText, currentText: currentText)
+            var resolution = resolutions[conflict.id]
+            if resolution == nil, conflict.canEdit, let baseText, let currentText, let requestedText,
+               let merged = GitHistory.mergeText(base: baseText, current: currentText, changed: requestedText) { resolution = .edited(merged) }
+            guard let resolution else { throw conflict }
+            expected[file] = current[file]
+            switch resolution {
+            case .current: desired[file] = current[file]
+            case .requested: desired[file] = after[file]
+            case .edited(let content):
+                guard conflict.canEdit, let entry = after[file], content.utf8.count <= 1_048_576, !content.utf8.contains(0) else { throw GitHubError("Choose a file version or enter UTF-8 text under 1 MiB.") }
+                struct Object: Decodable { let sha: String }
+                let data = try await mutationData("\(path)/git/blobs", body: ["content": Data(content.utf8).base64EncodedString(), "encoding": "base64"])
+                let blob = try Self.decoder().decode(Object.self, from: data)
+                guard GitHistory.validSHA(blob.sha) else { throw GitHubError("GitHub did not confirm the merged file.") }
+                desired[file] = GitTreeEntry(path: file, mode: entry.mode, type: "blob", sha: blob.sha, size: content.utf8.count)
+            }
+        }
+        return try GitHistory.apply(from: expected, to: desired, onto: current)
+    }
+
+    func changeHistory(in repository: Repository, branch: RepositoryBranch, selected: String, remove: Bool, resolutions: [String: HistoryResolution] = [:], saveRecovery: (@Sendable (CommitRecovery) async throws -> Void)? = nil) async throws -> String {
         guard !token.isEmpty, GitReference.validBranchName(branch.name), GitHistory.validSHA(selected), GitHistory.validSHA(branch.commit.sha) else { throw GitHubError("Connect GitHub and select a valid branch and commit.") }
         await clearCache()
         let path = "/repos/\(repository.fullName)"
@@ -112,7 +179,7 @@ extension GitHubClient {
             var rebuilt = before; var previous = after
             for item in later.reversed() {
                 let next = try await tree(item.tree.sha)
-                rebuilt = try GitHistory.apply(from: previous, to: next, onto: rebuilt)
+                rebuilt = try await mergeHistory(path: path, before: previous, after: next, current: rebuilt, resolutions: resolutions)
                 guard plan.reduce(0, { $0 + $1.1.count }) + rebuilt.count <= 250_000 else { throw GitHubError("This rewrite is too large for mobile editing. Use desktop Git.") }
                 plan.append((item, rebuilt)); previous = next
             }
@@ -122,12 +189,12 @@ extension GitHubClient {
             guard ["ahead", "identical"].contains(comparison.status) else { throw GitHubError("The selected commit is outside this branch.") }
             let head = try await commit(branch.commit.sha)
             let current = try await tree(head.tree.sha)
-            let result = try GitHistory.apply(from: after, to: before, onto: current)
+            let result = try await mergeHistory(path: path, before: after, after: before, current: current, resolutions: resolutions)
             guard result != current else { throw GitHubError("This commit has no file changes to undo.") }
             plan.append((nil, result)); newHead = head.sha
         }
         struct Object: Decodable { let sha: String }
-        // Plan all changes before creating any objects; the branch moves only in the final atomic push.
+        // Resolved text can create unreferenced blobs; only the final expected-SHA push moves the branch.
         for (original, entries) in plan {
             try Task.checkCancellation()
             let list = entries.values.sorted { $0.path < $1.path }.map { ["path": $0.path, "mode": $0.mode, "type": $0.type, "sha": $0.sha] }
@@ -154,7 +221,7 @@ extension GitHubClient {
         return Dictionary(uniqueKeysWithValues: result.tree.filter { $0.type != "tree" }.map { ($0.path, $0) })
     }
 
-    func restoreHistory(in repository: Repository, recovery: CommitRecovery, expected: String, reapply: Bool) async throws {
+    func restoreHistory(in repository: Repository, recovery: CommitRecovery, expected: String, reapply: Bool, resolutions: [String: HistoryResolution] = [:]) async throws {
         guard recovery.valid, recovery.repository == repository.fullName, GitHistory.validSHA(expected) else { throw GitHubError("Invalid recovery point.") }
         await clearCache(); let path = "/repos/\(repository.fullName)"
         let ref: GitReference = try await get("\(path)/git/ref/heads/\(recovery.branch)")
@@ -169,7 +236,7 @@ extension GitHubClient {
             let parent: GitObjectCommit = try await get("\(path)/git/commits/\(chosen.parents[0].sha)")
             let head: GitObjectCommit = try await get("\(path)/git/commits/\(expected)")
             let before = try await historyTree(path: path, sha: parent.tree.sha), after = try await historyTree(path: path, sha: chosen.tree.sha), current = try await historyTree(path: path, sha: head.tree.sha)
-            let entries = try GitHistory.apply(from: before, to: after, onto: current)
+            let entries = try await mergeHistory(path: path, before: before, after: after, current: current, resolutions: resolutions)
             struct Object: Decodable { let sha: String }
             let treeData = try await mutationData("\(path)/git/trees", body: ["tree": entries.values.map { ["path": $0.path, "mode": $0.mode, "type": $0.type, "sha": $0.sha] }])
             let tree = try Self.decoder().decode(Object.self, from: treeData)

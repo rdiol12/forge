@@ -18,7 +18,15 @@ final class ForgeStore {
     private var responseCache = APIMemoryCache()
     private var generation = 0
     private var refreshPending = false
-    var client: GitHubClient { GitHubClient(token: token, cache: responseCache) }
+    #if DEBUG
+    @ObservationIgnored private var previewReadToken = ""
+    #endif
+    var client: GitHubClient {
+        #if DEBUG
+        if !previewReadToken.isEmpty { return GitHubClient(token: previewReadToken, cache: responseCache) }
+        #endif
+        return GitHubClient(token: token, cache: responseCache)
+    }
 
     private func offlineFolder() throws -> URL {
         guard GitHubAccount.validLogin(account), hasToken else { throw GitHubError("Connect GitHub to manage offline copies.") }
@@ -59,6 +67,13 @@ final class ForgeStore {
             account = hasToken ? defaults.string(forKey: "account") ?? "Connected" : ""
         } catch { errors = [error.localizedDescription] }
         loadRecoveries()
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains(where: { $0.hasPrefix("--forge-preview-") }) {
+            let file = FileManager.default.temporaryDirectory.appendingPathComponent("preview-check-token")
+            previewReadToken = ((try? String(contentsOf: file, encoding: .utf8)) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            try? FileManager.default.removeItem(at: file)
+        }
+        #endif
     }
 
     private func recoveryFile(account: String) throws -> URL {
