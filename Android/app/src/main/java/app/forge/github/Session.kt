@@ -87,7 +87,8 @@ class ForgeState(application: Application) : AndroidViewModel(application) {
     private fun readRecoveries(): List<JSONObject> = runCatching { JSONArray(prefs.getString("recoveries:${account.lowercase()}", "[]")).objects().filter(::validRecovery) }.getOrDefault(emptyList())
     fun saveRecovery(item: JSONObject, account: String) {
         require(connected && validLogin(account) && account == this.account && validRecovery(item)) { "The connected account changed. Reopen the commit." }
-        val next = listOf(item) + recoveries.filter { it.s("id") != item.s("id") }
+        val existing = JSONArray(prefs.getString("recoveries:${account.lowercase()}", "[]")).objects()
+        val next = listOf(item) + existing.filter { it.s("id") != item.s("id") }
         check(prefs.edit().putString("recoveries:${account.lowercase()}", JSONArray(next).toString()).commit()) { "Couldn't save the recovery record. No branch was changed." }
         recoveries.clear(); recoveries.addAll(next)
     }

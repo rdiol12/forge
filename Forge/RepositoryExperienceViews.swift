@@ -14,6 +14,9 @@ struct RepositoryView: View {
     @State private var error: String?
     @State private var editingDescription = false
     @State private var description = ""
+    @State private var showingCode = false
+    @State private var showingIssues = false
+    @State private var showingForks = false
     private var favorite: Bool { store.repositories.contains { $0.id == repository.id } }
     var body: some View {
         List {
@@ -24,9 +27,9 @@ struct RepositoryView: View {
                     if let text = info?.description ?? summary?.description, !text.isEmpty { Text(text).multilineTextAlignment(.trailing).textSelection(.enabled) }
                     HStack(spacing: 20) {
                         Spacer()
-                        Button { Task { await star() } } label: { Label((info?.stargazersCount ?? summary?.stargazersCount ?? 0).formatted(), systemImage: starred ? "star.fill" : "star") }
+                        Button { Task { await star() } } label: { Label((info?.stargazersCount ?? summary?.stargazersCount).map { $0.formatted() } ?? "—", systemImage: starred ? "star.fill" : "star") }
                             .accessibilityLabel(starred ? "Unstar repository" : "Star and add to favorites").disabled(busy || !store.hasToken)
-                        NavigationLink { RepositoryCommunityView(repository: repository, kind: "Forks") } label: { Label((info?.forksCount ?? 0).formatted(), systemImage: "arrow.triangle.branch") }
+                        Button { showingForks = true } label: { Label(info.map { $0.forksCount.formatted() } ?? "—", systemImage: "arrow.triangle.branch") }.accessibilityLabel("Forks")
                     }.font(.subheadline).buttonStyle(.borderless)
                     if busy { ProgressView() }
                     if let error { ErrorNotice(message: error) }
@@ -42,8 +45,8 @@ struct RepositoryView: View {
                         NavigationLink { RepositorySettingsView(repository: repository) } label: { Label("Repository settings", systemImage: "gearshape") }
                     } label: { Image(systemName: "ellipsis").frame(width: 40, height: 34) }.accessibilityLabel("Repository options")
                     Spacer()
-                    NavigationLink("Code") { RepositoryFilesView(repository: repository, revision: branch) }
-                    NavigationLink("Issues") { ConversationListView(kind: .issue, repository: repository) }
+                    Button("Code") { showingCode = true }
+                    Button("Issues") { showingIssues = true }
                 }.buttonStyle(.borderless)
                 NavigationLink { ConversationListView(kind: .issue, repository: repository) } label: { WorkLabel("Issues", icon: "issue-opened", color: .green) }
                 NavigationLink { ConversationListView(kind: .pullRequest, repository: repository) } label: { WorkLabel("Pull Requests", icon: "git-pull-request", color: .blue) }
@@ -66,6 +69,9 @@ struct RepositoryView: View {
             if let branch { Section { ReadmeCard(repository: repository, branch: branch, canEdit: info?.permissions?.push == true) { Task { await load(fresh: true) } } }.listRowInsets(EdgeInsets()) }
         }.listStyle(.insetGrouped).listSectionSpacing(16)
         .navigationTitle(repository.name).navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(isPresented: $showingCode) { RepositoryFilesView(repository: repository, revision: branch) }
+        .navigationDestination(isPresented: $showingIssues) { ConversationListView(kind: .issue, repository: repository) }
+        .navigationDestination(isPresented: $showingForks) { RepositoryCommunityView(repository: repository, kind: "Forks") }
         .task(id: store.account) { await load() }
         .refreshable { await load(fresh: true) }
         .sheet(isPresented: $choosingBranch) { BranchPicker(repository: repository) { branch = $0 } }

@@ -183,9 +183,9 @@ jobs:
             printf '%s' "$GH_TOKEN" | adb shell run-as app.forge.github.debug tee files/live-token > /dev/null
             mkdir -p ../dist/android-screenshots
             adb shell am instrument -w -r app.forge.github.debug.test/androidx.test.runner.AndroidJUnitRunner | tee ../dist/android-screenshots/instrumentation.txt
-            grep -Eq '^OK \([1-9][0-9]* tests?\)' ../dist/android-screenshots/instrumentation.txt
-            adb pull /sdcard/Android/data/app.forge.github.debug/files/screenshots/. ../dist/android-screenshots/
             adb shell run-as app.forge.github.debug rm files/live-token
+            adb pull /sdcard/Android/data/app.forge.github.debug/files/screenshots/. ../dist/android-screenshots/
+            grep -Eq '^OK \([1-9][0-9]* tests?\)' ../dist/android-screenshots/instrumentation.txt
             adb install -r app/build/outputs/apk/release/app-release.apk
             adb shell am start -W -n app.forge.github/.MainActivity
             sleep 3

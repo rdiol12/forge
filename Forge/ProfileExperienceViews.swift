@@ -31,12 +31,12 @@ struct ProfileReadmeView: View {
     let login: String
     @Environment(ForgeStore.self) private var store
     @State private var branch: RepositoryBranch?
-    @State private var unavailable = false
+    @State private var error: String?
     private var repository: Repository? { try? Repository("\(login)/\(login)") }
     var body: some View {
         Section("Profile README") {
             if let repository, let branch { ReadmeCard(repository: repository, branch: branch, canEdit: login.lowercased() == store.account.lowercased()) { Task { await load() } }.listRowInsets(EdgeInsets()) }
-            else if unavailable { Text("This profile has no accessible README.").font(.footnote).foregroundStyle(.secondary) }
+            else if let error { Text(error).font(.footnote).foregroundStyle(.secondary) }
             else { ProgressView() }
         }.task(id: store.account) { await load() }
     }
@@ -45,8 +45,8 @@ struct ProfileReadmeView: View {
         do {
             let info: RepositoryOverview = try await store.client.get("/repos/\(repository.fullName)")
             let ref: GitReference = try await store.client.get("/repos/\(repository.fullName)/git/ref/heads/\(info.defaultBranch)")
-            guard !Task.isCancelled else { return }; branch = RepositoryBranch(name: info.defaultBranch, commit: .init(sha: ref.object.sha)); unavailable = false
-        } catch { if !Task.isCancelled { unavailable = true } }
+            guard !Task.isCancelled else { return }; branch = RepositoryBranch(name: info.defaultBranch, commit: .init(sha: ref.object.sha)); error = nil
+        } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
     }
 }
 

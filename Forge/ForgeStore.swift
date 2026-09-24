@@ -42,8 +42,10 @@ final class ForgeStore {
     }
     func saveRecovery(_ entry: CommitRecovery, account: String) throws {
         guard account == self.account, entry.valid else { throw GitHubError("The connected account changed. Reopen the commit.") }
-        let next = [entry] + recoveries.filter { $0.id != entry.id }
-        try JSONEncoder().encode(next).write(to: recoveryFile(account: account), options: [.atomic, .completeFileProtection])
+        let file = try recoveryFile(account: account)
+        let existing = FileManager.default.fileExists(atPath: file.path) ? try JSONDecoder().decode([CommitRecovery].self, from: Data(contentsOf: file)) : []
+        let next = [entry] + existing.filter { $0.id != entry.id }
+        try JSONEncoder().encode(next).write(to: file, options: [.atomic, .completeFileProtection])
         recoveries = next
     }
 

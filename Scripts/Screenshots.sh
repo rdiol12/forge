@@ -55,3 +55,11 @@ xcrun simctl io "$device" screenshot dist/screenshots/code-light.png
 xcrun simctl ui "$device" appearance dark
 sleep 2
 xcrun simctl io "$device" screenshot dist/screenshots/code-dark.png
+xcrun simctl terminate "$device" app.forge.github
+xcrun simctl ui "$device" appearance light
+xcrun simctl launch "$device" app.forge.github --forge-preview-readme
+sleep 8
+xcrun simctl io "$device" screenshot dist/screenshots/readme-light.png
+xcrun simctl ui "$device" appearance dark
+sleep 2
+xcrun simctl io "$device" screenshot dist/screenshots/readme-dark.png
