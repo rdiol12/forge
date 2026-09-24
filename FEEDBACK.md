@@ -1,6 +1,25 @@
 # Public feedback translated into Forge improvements
 
-Reviewed 2026-09-23. GitHub Mobile feedback is in the community/community Discussions Mobile category; github/mobile is not a public source repository. These reports describe requests or experiences, not verified defects in every current official-app version.
+Reviewed 2026-09-24. GitHub Mobile feedback is in the [community/community Discussions Mobile category](https://github.com/community/community/discussions/categories/mobile); github/mobile is not a public source repository. These reports describe requests or experiences, not verified defects in every current official-app version.
+
+## Newly reviewed requests
+
+Scanned the 30 most recently updated Mobile discussions, then read the requests and replies below, including older requests with continued interest. These are proposed additions, not shipped features or a claim to have audited every discussion. Priority reflects Forge's focus on Actions, releases and native reading; votes are a snapshot from GitHub's API on 2026-09-24, not a complete popularity ranking.
+
+| Priority | User request | Votes | Useful addition to Forge / current gap |
+| --- | --- | ---: | --- |
+| Next | [Approve deployments from an Actions run](https://github.com/orgs/community/discussions/110751) | 42 | Show pending environment reviews on the run screen, with approve/reject and a comment for eligible reviewers. Forge currently has rerun/cancel controls. GitHub staff clarified that their app already supports deployment review through notifications; the reported gap is opening it directly from a run or link. |
+| Next | [Markdown heading outline](https://github.com/orgs/community/discussions/204173) | 2 | Add a table of contents that jumps to README/Markdown headings. Complements Forge's rendered images, tables and full-width README without adding another card. |
+| Next | [Filter changed files in a PR](https://github.com/orgs/community/discussions/207767) | 1 | Search the changed-file list by name/path. Forge has code search within an opened file, but no filter for PR files. |
+| Next | [Copy a file's repository-relative path](https://github.com/orgs/community/discussions/208393) | 1 | Add Copy path alongside existing copy-content/download actions. The original report concerns Android; useful on both platforms. |
+| Next | [Convert a ready PR back to draft](https://github.com/orgs/community/discussions/13953) | 59 | Add explicit Draft / Ready for review controls for permitted users. Forge supports reviews and merges but lacks these transitions. The original request acknowledges that GitHub Mobile already supported draft-to-ready. |
+| Investigate | [Preserve position when returning to starred repositories](https://github.com/orgs/community/discussions/207613) | 1 | Check navigation restores scroll position, search and filters on both platforms. This is an upstream Android bug report; not yet reproduced as a Forge bug. |
+| Larger addition | [Read selected repositories offline](https://github.com/orgs/community/discussions/7365) | 80 | Explicit Keep offline for a selected branch, with last-sync time and storage/delete controls. Forge's short-lived response cache and downloaded files do not provide a browsable offline repository. |
+| Larger addition | [Read repository Wiki pages](https://github.com/orgs/community/discussions/9566) | 144 | Native Wiki navigation and rendered pages. Forge has no Wiki reader; first establish a supported way to fetch public and private Wiki content. |
+
+Suggested order: deployment approval, README outline, PR file filtering, Copy path, then draft PR controls. Check list restoration during navigation work; plan offline repositories and Wiki separately. Do not treat old reports as proof a feature is still absent in the latest GitHub Mobile build. For example, [repository creation shipped in GitHub Mobile on 2026-05-11](https://github.blog/changelog/2026-05-11-create-repositories-on-the-go-with-github-mobile/), so older requests for it are not presented here as a new gap in the official app.
+
+## Previously reviewed requests
 
 | Public report | What Forge does | Status |
 | --- | --- | --- |
@@ -16,4 +35,4 @@ Additional visual corrections in 0.3: compact Home rows, neutral row labels, cle
 
 No upstream issues or comments were posted, and no claim is made that these changes fix GitHub's own app or API.
 
-The private Forge issue tracker had no filed issues at the time of this review. GitHub Mobile already supports workflow logs and rerun/cancel controls ([official Actions announcement](https://github.com/orgs/community/discussions/54943)); those are not claimed as missing official-app features. Forge's remaining limits include push delivery, merge queues/conflict editing, arbitrary workflow step-summary Markdown, and complete Markdown rendering.
+The Forge issue tracker had no filed issues at the earlier review, when the repository was private. GitHub Mobile already supports workflow logs and rerun/cancel controls ([official Actions announcement](https://github.com/orgs/community/discussions/54943)); those are not claimed as missing official-app features. Forge's remaining limits include push delivery, merge queues/conflict editing and arbitrary workflow step-summary Markdown. Repository and profile READMEs now render images and tables; that does not imply full GitHub Markdown parity across every conversation screen.
