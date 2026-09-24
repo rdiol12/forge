@@ -16,5 +16,6 @@ build-simulator/
 
 .env.local
 
-# Keep Markdown documentation local.
+# Keep internal Markdown notes local; publish the repository README.
 *.[mM][dD]
+!/README.md
