@@ -5,6 +5,27 @@ import org.junit.Test
 import java.net.URI
 
 class CoreTest {
+    @Test fun offlineCopiesRejectUnsafePathsAndOversizedContent() {
+        val copy = json("repository" to "owner/repo", "branch" to "main", "sha" to "a".repeat(40), "saved" to 1L, "omitted" to 2, "files" to json("docs/README.md" to "hello"))
+        assertTrue(validOfflineCopy(copy))
+        copy.put("files", json("../escape" to "secret")); assertFalse(validOfflineCopy(copy))
+        copy.put("files", json("large.txt" to "a".repeat(1_048_577))); assertFalse(validOfflineCopy(copy))
+    }
+    @Test fun readmeOutlineHandlesDuplicateHeadingsAndEscapesLabels() {
+        val doc = ReadmeDocument("<h1>Build &amp; test</h1><h2><code>Install</code></h2><h2>Install</h2>", "owner/repo", "a".repeat(40), "README.md")
+        assertEquals(listOf("Build & test", "Install", "Install"), doc.headings.map { it.title })
+        assertEquals(listOf("forge-section-0", "forge-section-1", "forge-section-2"), doc.headings.map { it.id })
+        assertTrue(doc.page(false, true).contains("href=\"#forge-section-2\""))
+        assertTrue(doc.page(false, true).contains("Build &amp; test"))
+    }
+    @Test fun deploymentReviewRejectsMissingCommentOrInvalidEnvironment() {
+        assertThrows(IllegalArgumentException::class.java) { deploymentReviewBody(0, true, "reviewed") }
+        assertThrows(IllegalArgumentException::class.java) { deploymentReviewBody(7, true, "  ") }
+        val body = deploymentReviewBody(7, false, "Hold for testing")
+        assertEquals("rejected", body.getString("state"))
+        assertEquals(7, body.getJSONArray("environment_ids").getInt(0))
+        assertEquals("Hold for testing", body.getString("comment"))
+    }
     @Test fun historyPreservesUnrelatedFilesAndGitRejectsConcurrentUpdates() {
         val a = GitTreeEntry("a.txt", "100644", "blob", "a".repeat(40)); val b = a.copy(sha = "b".repeat(40)); val extra = a.copy(path = "extra.txt")
         assertEquals(mapOf(a.path to a, extra.path to extra), GitHistory.apply(mapOf(b.path to b), mapOf(a.path to a), mapOf(b.path to b, extra.path to extra)))

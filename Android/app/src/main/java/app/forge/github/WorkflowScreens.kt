@@ -51,6 +51,7 @@ fun runStatus(run: JSONObject) = run.s("conclusion").ifBlank { run.s("status") }
                 if (runStatus(run) in listOf("failure", "timed_out", "cancelled")) OutlinedButton(onClick = { control = "rerun-failed-jobs" }) { Text("Re-run failed") }
             }
         }
+        if (state.connected) DeploymentReviews(page)
         Group("Jobs & Tests") { Paged("${page.id}-${run.optInt("run_attempt")}", load = { number -> state.api.obj("$path/attempts/${run.optInt("run_attempt", 1)}/jobs", mapOf("per_page" to "30", "page" to number.toString())).rows("jobs") }) { job ->
             Column {
                 RowLink(job.s("name"), runStatus(job).replace('_', ' '), R.drawable.ic_workflow, statusColor(runStatus(job))) { state.open(Page("log", job.s("name"), page.repo, job.s("id"))) }
@@ -68,6 +69,26 @@ fun runStatus(run: JSONObject) = run.s("conclusion").ifBlank { run.s("status") }
             }
         }
         control?.let { action -> EditDialog(if (action == "cancel") "Cancel workflow run?" else "Re-run workflow?", emptyList(), "${page.repo}\n${run.s("name")} #${run.optLong("run_number")}\n${run.s("head_branch")} · ${run.s("head_sha").take(12)}", "Confirm", dismiss = { control = null }) { state.api.change("$path/$action"); state.notice = "GitHub accepted the request. Refresh to see its progress." } }
+    } }
+}
+
+@Composable private fun DeploymentReviews(page: Page) {
+    val state = LocalForge.current
+    var selected by remember { mutableStateOf<JSONObject?>(null) }; var approved by remember { mutableStateOf(true) }
+    Group("Deployment reviews") {
+        Loaded(page to "deployments", load = { (state.api.request("/repos/${repository(page.repo)}/actions/runs/${positiveID(page.id)}/pending_deployments") as org.json.JSONArray).objects() }) { pending ->
+            if (pending.isEmpty()) Note("No pending deployment reviews.")
+            pending.forEach { item ->
+                Text(item.o("environment").s("name"), fontWeight = FontWeight.Bold, modifier = Modifier.padding(12.dp))
+                if (item.optBoolean("current_user_can_approve")) Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { approved = true; selected = item }) { Text("Approve") }
+                    OutlinedButton(onClick = { approved = false; selected = item }) { Text("Reject") }
+                } else Note("Waiting for an eligible reviewer or protection rule.")
+            }
+        }
+    }
+    selected?.let { item -> EditDialog(if (approved) "Approve deployment" else "Reject deployment", listOf(Field("Review comment", multiline = true)), "${page.repo} · Run ${page.id} · ${item.o("environment").s("name")}", "Submit review", dismiss = { selected = null }) { values ->
+        state.api.reviewDeployment(page.repo, page.id, item.o("environment").getLong("id"), approved, values[0])
     } }
 }
 
@@ -108,7 +129,7 @@ fun runStatus(run: JSONObject) = run.s("conclusion").ifBlank { run.s("status") }
                     if (entry.status == "Saved") Note("The local file was removed. Download it again to save or share it.")
                     TextButton(onClick = { state.task { state.downloads.retry(state.api, entry) } }) { Text("Try again") }
                 }
-                TextButton(onClick = { deleting = entry }) { Text("Delete downloaded file", color = MaterialTheme.colorScheme.error) }
+                TextButton(onClick = { deleting = entry }) { Text(if (!entry.active && entry.status != "Saved") "Remove failed download" else "Delete downloaded file", color = MaterialTheme.colorScheme.error) }
             }
         } }
         Note("Archives and release assets continue through Android's download manager. Direct API files need Forge running. Try again starts a fresh request if a signed download URL expires.")

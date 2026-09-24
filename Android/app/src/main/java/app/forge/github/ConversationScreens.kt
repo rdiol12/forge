@@ -63,6 +63,7 @@ private const val COMMENT = "node_id:id body user:author{login} created_at:creat
 private fun discussionVariables(page: Page, cursor: String? = null) = json("owner" to repository(page.repo).substringBefore('/'), "name" to page.repo.substringAfter('/'), "number" to positiveID(page.id).toInt(), "cursor" to cursor)
 
 @Composable fun ConversationScreen(page: Page) {
+    var draftChange by rememberSaveable { mutableStateOf(false) }
     val state = LocalForge.current; var comment by rememberSaveable { mutableStateOf(false) }; var edit by rememberSaveable { mutableStateOf(false) }; var review by rememberSaveable { mutableStateOf<String?>(null) }; var merge by rememberSaveable { mutableStateOf<String?>(null) }
     val repoPath = "/repos/${repository(page.repo)}"; val number = positiveID(page.id)
     Screen { Loaded(page, load = {
@@ -90,6 +91,10 @@ private fun discussionVariables(page: Page, cursor: String? = null) = json("owne
                 RowLink("Review conversations", icon = R.drawable.ic_comment_discussion) { state.open(Page("threads", "Review conversations", page.repo, number)) }
             }
             if (state.connected && validSha(sha) && item.s("state") == "open") {
+                if (permissions.optBoolean("push") || item.o("user").s("login") == state.account) {
+                    OutlinedButton(onClick = { draftChange = true }) { Text(if (item.optBoolean("draft")) "Ready for review" else "Convert to draft") }
+                    if (draftChange) EditDialog(if (item.optBoolean("draft")) "Mark ready for review?" else "Convert to draft?", emptyList(), "${page.repo} #$number", "Confirm", dismiss = { draftChange = false }) { state.api.setPullDraft(item.s("node_id"), !item.optBoolean("draft")) }
+                }
                 Group("Review") { listOf("COMMENT" to "Comment review", "APPROVE" to "Approve", "REQUEST_CHANGES" to "Request changes").forEach { (event, label) -> TextButton(onClick = { review = event }) { Text(label) } } }
                 if (permissions.optBoolean("push") && !item.optBoolean("draft")) Group("Merge") {
                     listOf("merge" to "allow_merge_commit", "squash" to "allow_squash_merge", "rebase" to "allow_rebase_merge").filter { repo.optBoolean(it.second) }.forEach { (method, _) ->
@@ -168,10 +173,12 @@ suspend fun discussionReply(api: GitHub, discussion: String, parent: String?, bo
 }
 
 @Composable fun PullFiles(page: Page) {
+    var filter by rememberSaveable { mutableStateOf("") }
     val state = LocalForge.current; var lineComment by rememberSaveable { mutableStateOf<String?>(null) }; var revision by remember { mutableStateOf(page.sha) }
     Screen {
         Note("Tap + beside a line to add an inline review comment. Diff comments are pinned to the displayed commit.")
-        Group { Paged(page, load = { number ->
+        OutlinedTextField(filter, { filter = it }, label = { Text("Filter loaded files by name or path") }, modifier = Modifier.fillMaxWidth())
+        Group { Paged(page, visible = { it.s("filename").contains(filter, true) }, load = { number ->
             val path = "/repos/${repository(page.repo)}/pulls/${positiveID(page.id)}"
             val before = state.api.obj(path).o("head").s("sha")
             require(validSha(before) && (number == 1 || before == revision)) { "Pull request changed. Refresh to reload its diff." }

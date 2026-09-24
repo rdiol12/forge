@@ -140,6 +140,7 @@ struct AccountProfileView: View {
 
 @MainActor
 struct AccountRepositoriesView: View {
+    @State private var loadedAccount: String?
     let collection: RepositoryCollection
     var showsActions = false
     @Environment(ForgeStore.self) private var store
@@ -206,7 +207,7 @@ struct AccountRepositoriesView: View {
         .navigationTitle(showsActions ? "Actions" : source.title)
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $search, prompt: "Filter loaded repositories")
-        .task(id: store.account) { await load(reset: true) }
+        .task(id: store.account) { if entries.isEmpty || loadedAccount != store.account { await load(reset: true) } }
         .refreshable { await store.client.clearCache(); await load(reset: true) }
         .sheet(isPresented: $showingSettings, onDismiss: { Task { await load(reset: true) } }) { SettingsView() }
     }
@@ -224,6 +225,7 @@ struct AccountRepositoriesView: View {
             let result = try await store.client.accountRepositories(source, page: nextPage)
             guard !Task.isCancelled, requestID == id, account == store.account else { return }
             entries += result.filter { item in !entries.contains { $0.id == item.id } }
+            loadedAccount = account
             page = nextPage
             more = result.count == 30
         } catch { if !Task.isCancelled, requestID == id, account == store.account { self.error = error.localizedDescription } }

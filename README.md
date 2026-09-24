@@ -2,9 +2,16 @@
 
 A native SwiftUI iOS and Kotlin/Jetpack Compose Android GitHub companion focused on **Actions, releases, and downloading their files**. Working name: Forge. Requires iOS 17 or Android 8.0 or later; no third-party iOS runtime dependencies, analytics, or AI service. Standard browser sign-in uses a small OAuth exchange backend.
 
-0.8.1 fixes iPhone release downloads, adds a shared Forge icon and the installed version/build in Settings, and gives repository READMEs the available width without a surrounding card. CI checks real release, Actions-artifact and repository-file downloads inside the iPhone simulator before publishing both apps.
+0.9.0 adds deployment reviews, draft/ready PR controls, file filtering and path copying, document outlines, offline code snapshots, in-app Wiki access, restored list positions, and a left-aligned repository layout with larger avatars. It includes the iPhone download fixes, a visible Remove option for failed downloads, the shared Forge icon, version/build in Settings, and full-width READMEs. CI checks real release, Actions-artifact and repository-file downloads before publishing both apps.
 
 ## Implemented
+
+- Approve or reject pending environment deployments directly from an Actions run. Forge checks current reviewer eligibility before submission; GitHub enforces environment protection rules. Deployment reviews need Deployments write permission and an eligible account.
+- Convert an open pull request to draft or mark it ready for review, with confirmation. Filter loaded changed files by name/path and copy a repository-relative file path.
+- Open README Contents for a full-screen reader with heading links. Native Markdown previews also offer a heading menu.
+- Save a branch's UTF-8 code and documents from More > Offline copy, then read them from Home > Offline repositories without a connection. Each copy is pinned to a commit and shows its saved date and omitted-file count. The first 100 eligible blobs are examined, with a 1 MiB/file and 10 MiB/copy cap; images, submodules, Git history, and omitted files are not included. A newer copy replaces that repository's previous branch snapshot only after all selected reads succeed. Copies are account-scoped, excluded from backup, and removed on disconnect or account change.
+- Open Wiki from a repository's More section inside the app. GitHub does not provide a supported REST Wiki reader, so this uses the GitHub Wiki page in the in-app browser; private Wikis require website sign-in separately from the API token.
+- Returning from a repository preserves the list's search/filter, loaded pages and scroll position during navigation. Refresh reloads the list.
 
 - Browser sign-in with GitHub using Apple AuthenticationServices, PKCE, state validation, and Keychain. Activation requires a GitHub OAuth app registration and server-side credentials for the [login backend](Backend/).
 - Read code with syntax colors, line numbers, search, wrapping, and copy; render Markdown headings/lists/code blocks and format JSON. Switch branches in Code, with previews, file downloads and repository ZIPs pinned to the selected revision. Edit README files with a preview and a commit to the selected branch.
@@ -27,6 +34,7 @@ A native SwiftUI iOS and Kotlin/Jetpack Compose Android GitHub companion focused
 - Follow a release inbox that remembers which releases you have opened.
 - See **GitHub's exact per-file release download counts**, with a total for the assets loaded.
 - Download release assets, including private ones when your token permits it.
+- Remove failed downloads directly from their row.
 - Track download progress, cancel, retry, and use the native share sheet to **Save to Files**.
 - Keep completed downloads in the app's local library, accessible offline and through Files → On My iPhone → Forge → Downloads.
 
@@ -88,7 +96,7 @@ Public release browsing and downloads work without signing in. **Sign in with Gi
 
 For collaboration with a fine-grained token, add **Issues: Read and write** for issue creation, **Pull requests: Read and write** for reviews, and **Contents: Read and write** for merging and branch creation. Your account also needs the corresponding repository permission. GitHub enforces its own branch rules. Watch/unwatch uses GitHub subscriptions; Inbox still requires OAuth or a classic token as noted above.
 
-After sign-in, the token is validated with `/user`, stored using a device-only Keychain accessibility class, and sent only to `api.github.com`. API responses use ephemeral sessions. Redirects allow HTTPS GitHub storage endpoints and strip authorization before changing hosts. Downloaded files are stored locally with iOS file protection and excluded from backup. Disconnecting cancels downloads and clears loaded account data; watched repository names and deliberately downloaded files remain on the device.
+After sign-in, the token is validated with `/user`, stored using a device-only Keychain accessibility class, and sent only to `api.github.com`. API responses use ephemeral sessions. Redirects allow HTTPS GitHub storage endpoints and strip authorization before changing hosts. Downloaded files are stored locally with iOS file protection and excluded from backup. Disconnecting cancels downloads, removes offline repository copies, and clears loaded account data; watched repository names and deliberately downloaded files remain on the device.
 
 ## Check the code
 

@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,6 +52,7 @@ val LocalForge = staticCompositionLocalOf<ForgeState> { error("Missing Forge sta
         val titles = listOf("Home", "Inbox", "Explore", "Profile")
         val icons = listOf(R.drawable.ic_home, R.drawable.ic_inbox, R.drawable.ic_telescope, R.drawable.ic_person)
         val page = state.stack.lastOrNull()
+        val savedPages = key(state.generation) { rememberSaveableStateHolder() }
         var homeMenu by remember { mutableStateOf(false) }
         val snack = remember { SnackbarHostState() }
         LaunchedEffect(state.notice) { state.notice?.let { snack.showSnackbar(it); state.notice = null } }
@@ -77,10 +79,10 @@ val LocalForge = staticCompositionLocalOf<ForgeState> { error("Missing Forge sta
             } } }, snackbarHost = { SnackbarHost(snack) }
         ) { padding ->
             Box(Modifier.padding(padding).fillMaxSize()) {
-                key(state.generation, page, state.tab) {
+                savedPages.SaveableStateProvider(state.navigationKey) { key(state.generation, page, state.tab) {
                     if (page != null) Destination(page)
                     else when (state.tab) { 0 -> Home(); 1 -> Inbox(); 2 -> RepositorySearch(); else -> if (state.connected) Profile(state.account) else Settings() }
-                }
+                } }
             }
         }
     }
@@ -113,20 +115,25 @@ fun Modifier.semanticsLabel(label: String) = this.then(Modifier.semantics { cont
 
 @Composable fun <T : Any> Loaded(id: Any = Unit, load: suspend () -> T, content: @Composable (T) -> Unit) {
     val state = LocalForge.current
-    var value by remember(id) { mutableStateOf<T?>(null) }; var error by remember(id) { mutableStateOf<String?>(null) }; var busy by remember(id) { mutableStateOf(true) }
+    val cacheKey = "${state.navigationKey}|loaded:$id"
+    @Suppress("UNCHECKED_CAST")
+    var value by remember(id) { mutableStateOf(state.screenValues[cacheKey] as T?) }; var error by remember(id) { mutableStateOf<String?>(null) }; var busy by remember(id) { mutableStateOf(value == null) }
     LaunchedEffect(id, state.refresh, state.generation) {
+        if (state.screenValues.containsKey(cacheKey)) return@LaunchedEffect
         busy = true; error = null
-        try { value = load() } catch (e: CancellationException) { throw e } catch (e: Exception) { error = e.message ?: "Could not load this content." } finally { busy = false }
+        try { value = load(); value?.let { state.screenValues[cacheKey] = it } } catch (e: CancellationException) { throw e } catch (e: Exception) { error = e.message ?: "Could not load this content." } finally { busy = false }
     }
     if (busy) Loading()
     error?.let { ErrorText(it); TextButton(onClick = { state.refresh++ }) { Text("Retry") } }
     value?.let { content(it) }
 }
 
-@Composable fun Paged(id: Any = Unit, order: Comparator<JSONObject>? = null, load: suspend (Int) -> List<JSONObject>, row: @Composable (JSONObject) -> Unit) {
+@Composable fun Paged(id: Any = Unit, order: Comparator<JSONObject>? = null, visible: (JSONObject) -> Boolean = { true }, load: suspend (Int) -> List<JSONObject>, row: @Composable (JSONObject) -> Unit) {
     val state = LocalForge.current; val scope = rememberCoroutineScope()
-    var rows by remember(id) { mutableStateOf(emptyList<JSONObject>()) }; var page by remember(id) { mutableIntStateOf(0) }
-    var more by remember(id) { mutableStateOf(false) }; var busy by remember(id) { mutableStateOf(false) }; var error by remember(id) { mutableStateOf<String?>(null) }
+    val cacheKey = "${state.navigationKey}|paged:$id"
+    val saved = state.listPages[cacheKey]
+    var rows by remember(id) { mutableStateOf(saved?.first ?: emptyList()) }; var page by remember(id) { mutableIntStateOf(saved?.second ?: 0) }
+    var more by remember(id) { mutableStateOf(saved?.third ?: false) }; var busy by remember(id) { mutableStateOf(false) }; var error by remember(id) { mutableStateOf<String?>(null) }
     suspend fun fetch(reset: Boolean) {
         if (busy) return; busy = true; error = null
         try {
@@ -134,11 +141,13 @@ fun Modifier.semanticsLabel(label: String) = this.then(Modifier.semantics { cont
             rows = (if (reset) result else rows + result).distinctBy { it.s("id").ifBlank { it.s("node_id").ifBlank { it.toString() } } }
             order?.let { rows = rows.sortedWith(it) }
             page = next; more = result.size == 30
+            state.listPages[cacheKey] = Triple(rows, page, more)
         } catch (e: CancellationException) { throw e } catch (e: Exception) { error = e.message ?: "Could not load this page." } finally { busy = false }
     }
-    LaunchedEffect(id, state.refresh, state.generation) { fetch(true) }
+    LaunchedEffect(id, state.refresh, state.generation) { if (!state.listPages.containsKey(cacheKey)) fetch(true) }
     Column {
-        rows.forEach { row(it); HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f)) }
+        rows.filter(visible).forEach { row(it); HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f)) }
+        if (!busy && rows.isNotEmpty() && rows.none(visible)) Note("No matches in the loaded results.")
         if (busy) Loading()
         if (!busy && rows.isEmpty() && error == null) Note("Nothing here yet.")
         error?.let { ErrorText(it); TextButton(onClick = { scope.launch { fetch(page == 0) } }) { Text("Retry") } }
@@ -178,6 +187,9 @@ data class Field(val label: String, val initial: String = "", val multiline: Boo
 @Composable fun Destination(page: Page) {
     when (page.kind) {
         "home" -> Home()
+        "offlineList" -> OfflineLibrary()
+        "offline" -> OfflineRepository(page)
+        "offlineFile" -> OfflineFile(page)
         "licenses" -> { val context = androidx.compose.ui.platform.LocalContext.current; Screen { Note(remember { context.assets.open("ThirdPartyNotices.txt").bufferedReader().use { it.readText() } }) } }
         "settings" -> Settings()
         "repo" -> RepositoryScreen(page.repo, page.branch)

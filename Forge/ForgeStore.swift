@@ -20,6 +20,35 @@ final class ForgeStore {
     private var refreshPending = false
     var client: GitHubClient { GitHubClient(token: token, cache: responseCache) }
 
+    private func offlineFolder() throws -> URL {
+        guard GitHubAccount.validLogin(account), hasToken else { throw GitHubError("Connect GitHub to manage offline copies.") }
+        let root = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        var folder = root.appendingPathComponent("Offline/\(account.lowercased())", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        var values = URLResourceValues(); values.isExcludedFromBackup = true; try folder.setResourceValues(values)
+        return folder
+    }
+    private func offlineFile(_ repository: String) throws -> URL {
+        _ = try Repository(repository)
+        let name = Data(repository.lowercased().utf8).base64EncodedString().replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "+", with: "-")
+        return try offlineFolder().appendingPathComponent(name + ".json")
+    }
+    func offlineCopies() throws -> [OfflineCopy] {
+        guard hasToken else { return [] }
+        return try FileManager.default.contentsOfDirectory(at: offlineFolder(), includingPropertiesForKeys: nil).filter { $0.pathExtension == "json" }.map {
+            let copy = try JSONDecoder().decode(OfflineCopy.self, from: Data(contentsOf: $0))
+            guard copy.valid else { throw GitHubError("An offline copy is damaged. Remove it in Settings by disconnecting.") }; return copy
+        }.sorted { $0.repository.localizedCaseInsensitiveCompare($1.repository) == .orderedAscending }
+    }
+    func saveOffline(_ copy: OfflineCopy, account: String) throws {
+        guard account == self.account, copy.valid else { throw GitHubError("The connected account changed. Try saving again.") }
+        try JSONEncoder().encode(copy).write(to: offlineFile(copy.repository), options: [.atomic, .completeFileProtection])
+    }
+    func deleteOffline(_ repository: String) throws { try FileManager.default.removeItem(at: offlineFile(repository)) }
+    private func clearOffline() throws {
+        if hasToken, GitHubAccount.validLogin(account) { try FileManager.default.removeItem(at: offlineFolder()) }
+    }
+
     init() {
         let defaults = UserDefaults.standard
         repositories = (defaults.stringArray(forKey: "repositories") ?? []).compactMap { try? Repository($0) }
@@ -87,6 +116,7 @@ final class ForgeStore {
             throw GitHubError("Enter a valid personal access token.")
         }
         let account = try await GitHubClient(token: candidate).accountName()
+        if account.lowercased() != self.account.lowercased() { try clearOffline() }
         try TokenKeychain.save(candidate)
         generation += 1
         responseCache = APIMemoryCache()
@@ -100,6 +130,7 @@ final class ForgeStore {
     }
 
     func disconnect() throws {
+        try clearOffline()
         try TokenKeychain.delete()
         generation += 1
         responseCache = APIMemoryCache()

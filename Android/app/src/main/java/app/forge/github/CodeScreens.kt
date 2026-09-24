@@ -1,5 +1,8 @@
 package app.forge.github
 
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -86,11 +89,13 @@ private data class Tree(val branch: String, val sha: String, val path: String, v
 }
 
 @Composable fun FileScreen(page: Page) {
+    val clipboard = LocalClipboardManager.current
     val state = LocalForge.current; var edit by rememberSaveable { mutableStateOf(page.id == "edit") }; var preview by rememberSaveable { mutableStateOf(page.title.endsWith(".md", true) || page.title.startsWith("README", true)) }
     var savedText by remember(page.sha) { mutableStateOf<String?>(null) }; var sha by remember(page.sha) { mutableStateOf(page.sha) }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             DownloadButton(DownloadSpec("/repos/${repository(page.repo)}/git/blobs/$sha", page.title, "application/vnd.github.raw+json"))
+            TextButton(onClick = { clipboard.setText(AnnotatedString(page.arg)); state.notice = "File path copied." }) { Text("Copy path") }
             if (page.title.endsWith(".md", true) || page.title.startsWith("README", true) || page.title.endsWith(".json", true)) TextButton(onClick = { preview = !preview }) { Text(if (preview) "Source" else if (page.title.endsWith(".json", true)) "Format JSON" else "Preview") }
         }
         Loaded(page to sha, load = { savedText ?: state.api.blob(page.repo, sha) }) { original ->
@@ -162,7 +167,18 @@ fun highlight(source: String, dark: Boolean): List<AnnotatedString> {
     val state = LocalForge.current; val context = LocalContext.current
     val linkColor = MaterialTheme.colorScheme.primary
     val blocks = remember(source) { markdownBlocks(source) }
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { blocks.forEach { (kind, text) ->
+    val positions = remember(source) { blocks.map { BringIntoViewRequester() } }
+    val scope = rememberCoroutineScope()
+    var contents by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (blocks.any { it.first.startsWith("h") }) Box {
+            TextButton(onClick = { contents = true }) { Text("Contents") }
+            DropdownMenu(contents, onDismissRequest = { contents = false }) { blocks.forEachIndexed { index, (kind, title) ->
+                if (kind.startsWith("h")) DropdownMenuItem(text = { Text(title) }, onClick = { contents = false; scope.launch { positions[index].bringIntoView() } })
+            } }
+        }
+        blocks.forEachIndexed { index, (kind, text) ->
+        Column(Modifier.bringIntoViewRequester(positions[index])) {
         when {
             kind == "code" -> Box(Modifier.heightIn(min = 160.dp, max = 300.dp).height(250.dp)) { CodeReader(text, "snippet") }
             kind.startsWith("h") -> Text(text, style = when (kind) { "h1" -> MaterialTheme.typography.headlineMedium; "h2" -> MaterialTheme.typography.headlineSmall; else -> MaterialTheme.typography.titleMedium }, fontWeight = FontWeight.Bold)
@@ -183,7 +199,7 @@ fun highlight(source: String, dark: Boolean): List<AnnotatedString> {
                 SelectionContainer { Text(rich, style = MaterialTheme.typography.bodyMedium, color = if (kind == "quote") MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface) }
             }
         }
-    } }
+    } } }
 }
 
 fun markdownBlocks(source: String): List<Pair<String, String>> {

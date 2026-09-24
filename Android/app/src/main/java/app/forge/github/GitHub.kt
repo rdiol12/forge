@@ -14,6 +14,28 @@ fun JSONObject.rows(key: String): List<JSONObject> = optJSONArray(key)?.objects(
 fun JSONArray.objects(): List<JSONObject> = (0 until length()).mapNotNull { optJSONObject(it) }
 fun json(vararg pairs: Pair<String, Any?>) = JSONObject().apply { pairs.forEach { (k, v) -> put(k, v ?: JSONObject.NULL) } }
 
+fun deploymentReviewBody(environment: Long, approved: Boolean, comment: String): JSONObject {
+    require(environment > 0 && comment.isNotBlank()) { "Add a deployment review comment." }
+    return json("environment_ids" to JSONArray(listOf(environment)), "state" to if (approved) "approved" else "rejected", "comment" to comment)
+}
+
+suspend fun GitHub.reviewDeployment(repo: String, run: String, environment: Long, approved: Boolean, comment: String) {
+    val body = deploymentReviewBody(environment, approved, comment)
+    val path = "/repos/${repository(repo)}/actions/runs/${positiveID(run)}/pending_deployments"
+    cache?.clear()
+    val pending = (request(path) as JSONArray).objects()
+    require(pending.any { it.o("environment").optLong("id") == environment && it.optBoolean("current_user_can_approve") }) { "This deployment is no longer waiting for you, or you are not an eligible reviewer. Refresh the run." }
+    val result = request(path, method = "POST", body = body) as JSONArray
+    require(result.length() > 0) { "GitHub did not confirm the deployment review. Refresh before retrying." }
+}
+
+suspend fun GitHub.setPullDraft(id: String, draft: Boolean) {
+    require(id.isNotBlank()) { "Refresh the pull request first." }
+    val mutation = if (draft) "convertPullRequestToDraft" else "markPullRequestReadyForReview"
+    val result = gql("mutation(\$id:ID!){result:$mutation(input:{pullRequestId:\$id}){pullRequest{isDraft}}}", json("id" to id)).o("result").o("pullRequest")
+    require(result.has("isDraft") && result.getBoolean("isDraft") == draft) { "GitHub did not confirm the PR status. Refresh before retrying." }
+}
+
 class GitHub(val token: String, val cache: APIMemoryCache? = null) {
     fun connection(uri: URI, accept: String = "application/vnd.github+json"): HttpURLConnection {
         require(trustedDownload(uri)) { "Unsupported GitHub download location." }

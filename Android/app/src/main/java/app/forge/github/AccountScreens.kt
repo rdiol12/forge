@@ -29,6 +29,7 @@ import java.net.URI
     Screen {
         if (!state.connected) Group { RowLink("Connect GitHub", "Access your private repositories and workflows", R.drawable.ic_person) { state.open(Page("settings", "Settings")) } }
         Group("My Work") {
+            RowLink("Offline repositories", icon = R.drawable.ic_download) { state.open(Page("offlineList", "Offline repositories")) }
             RowLink("Issues", icon = R.drawable.ic_issue_opened, color = Color(0xFF1A7F37)) { state.open(Page("conversations", "Issues", arg = "issue")) }
             RowLink("Pull Requests", icon = R.drawable.ic_git_pull_request, color = Color(0xFF0969DA)) { state.open(Page("conversations", "Pull Requests", arg = "pull")) }
             RowLink("Discussions", icon = R.drawable.ic_comment_discussion, color = Color(0xFF8250DF)) { state.open(Page("conversations", "Discussions", arg = "discussion")) }
@@ -76,7 +77,7 @@ import java.net.URI
         Note("Forge · Version ${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})\nAn independent GitHub companion. Tokens stay encrypted on this device. Website sessions are separate. Downloaded files remain when you disconnect.")
         Group { RowLink("Open source licenses", "Octicons and Android libraries") { state.open(Page("licenses", "Licenses")) } }
     }
-    if (disconnect) EditDialog("Disconnect GitHub?", emptyList(), "Active downloads will be cancelled. Saved files and favorites remain on this device.", "Disconnect", dismiss = { disconnect = false }) { state.disconnect() }
+    if (disconnect) EditDialog("Disconnect GitHub?", emptyList(), "Active downloads will be cancelled and offline repository copies removed. Downloaded files and favorites remain on this device.", "Disconnect", dismiss = { disconnect = false }) { state.disconnect() }
 }
 
 private val avatars = android.util.LruCache<String, android.graphics.Bitmap>(40)
@@ -188,12 +189,14 @@ private val avatars = android.util.LruCache<String, android.graphics.Bitmap>(40)
 
 @Composable fun Repositories(page: Page) {
     val state = LocalForge.current
+    var search by rememberSaveable { mutableStateOf("") }
     Screen {
+        OutlinedTextField(search, { search = it }, label = { Text("Filter loaded repositories") }, modifier = Modifier.fillMaxWidth())
         if (page.kind == "actionProjects") {
             Note("Choose a project to see its workflow runs, jobs, and artifacts.")
             Group("Favorite projects") { state.favorites.forEach { repo -> RowLink(repo, icon = R.drawable.ic_workflow) { state.open(Page("actions", "Actions", repo)) } } }
         }
-        Group(if (page.kind == "actionProjects") "Your projects" else "") { Paged(page, load = { number ->
+        Group(if (page.kind == "actionProjects") "Your projects" else "") { Paged(page, visible = { "${it.s("full_name")} ${it.s("description")}".contains(search, true) }, load = { number ->
         val path = when (page.arg) {
             "owned", "starred" -> { require(state.connected) { "Connect GitHub in Settings to see your repositories." }; if (page.arg == "owned") "/user/repos" else "/user/starred" }
             "org" -> "/orgs/${accountPath(page.id)}/repos"
@@ -221,7 +224,7 @@ private val avatars = android.util.LruCache<String, android.graphics.Bitmap>(40)
 }
 
 @Composable fun RepositorySearch() {
-    val state = LocalForge.current; var query by remember { mutableStateOf("") }; var submitted by remember { mutableStateOf("") }
+    val state = LocalForge.current; var query by rememberSaveable { mutableStateOf("") }; var submitted by rememberSaveable { mutableStateOf("") }
     Screen {
         OutlinedTextField(query, { query = it }, label = { Text("Search repositories or enter owner/name") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

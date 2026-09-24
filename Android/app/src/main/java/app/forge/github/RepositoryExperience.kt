@@ -18,13 +18,15 @@ fun issueFields(title: String, body: String, assignees: List<String> = emptyList
 fun htmlEscape(value: String) = value.replace("&", "&amp;").replace("\"", "&quot;").replace("<", "&lt;").replace(">", "&gt;")
 
 class ReadmeDocument(source: String, val repo: String, val sha: String, val path: String) {
+    data class Heading(val id: String, val title: String, val level: Int)
     val html: String
+    val headings: List<Heading>
     val base: String get() = URI("https", "github.com", "/$repo/blob/$sha/$path", null).toASCIIString()
     init {
         repository(repo); require(sha.matches(Regex("[a-fA-F0-9]{40}"))); require(safePath(path))
         val base = URI("https", "raw.githubusercontent.com", "/$repo/$sha/$path", null)
         val clean = source.replace(Regex("""\s+srcset\s*=\s*(?:"[^"]*"|'[^']*')""", RegexOption.IGNORE_CASE), "")
-        html = Regex("""\bsrc\s*=\s*(["'])(.*?)\1""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).replace(clean) { match ->
+        val images = Regex("""\bsrc\s*=\s*(["'])(.*?)\1""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).replace(clean) { match ->
             val location = runCatching {
                 val uri = base.resolve(match.groupValues[2].replace("&amp;", "&")).normalize()
                 require(uri.scheme == "https" && uri.userInfo == null && uri.port in listOf(-1, 443))
@@ -38,14 +40,25 @@ class ReadmeDocument(source: String, val repo: String, val sha: String, val path
             }.getOrDefault("")
             "src=\"${htmlEscape(location)}\""
         }
+        val pattern = Regex("""<h([1-6])\b[^>]*>(.*?)</h\1>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+        headings = pattern.findAll(images).mapIndexed { index, match ->
+            var title = match.groupValues[2].replace(Regex("<[^>]+>"), "")
+            listOf("&lt;" to "<", "&gt;" to ">", "&quot;" to "\"", "&#39;" to "'", "&nbsp;" to " ", "&amp;" to "&").forEach { (entity, value) -> title = title.replace(entity, value) }
+            Heading("forge-section-$index", title.trim(), match.groupValues[1].toInt())
+        }.toList()
+        var index = 0
+        html = pattern.replace(images) { "<span id=\"forge-section-${index++}\"></span>${it.value}" }
     }
     fun imagePath(uri: URI): String? = runCatching {
         require(uri.scheme == "forge-readme" && uri.host == "image" && uri.userInfo == null && uri.port == -1 && uri.query == null)
         uri.path.removePrefix("/").also { require(safePath(it)) }
     }.getOrNull()
-    fun page(dark: Boolean): String = """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; img-src https: forge-readme:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"><style>
+    fun page(dark: Boolean, outline: Boolean = false): String {
+        val contents = if (outline && headings.isNotEmpty()) "<nav aria-label=\"Contents\"><details open><summary>Contents</summary>" + headings.joinToString("") { "<p style=\"margin:6px 0 6px ${(it.level - 1) * 12}px\"><a href=\"#${it.id}\">${htmlEscape(it.title)}</a></p>" } + "</details></nav>" else ""
+        return """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; img-src https: forge-readme:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"><style>
         :root{color-scheme:${if(dark) "dark" else "light"}}body{margin:0;padding:16px;font:16px -apple-system,BlinkMacSystemFont,Roboto,sans-serif;line-height:1.55;overflow-wrap:anywhere;color:${if(dark) "#e6edf3" else "#1f2328"};background:${if(dark) "#0d1117" else "white"}}img,video{max-width:100%;height:auto}h1,h2{border-bottom:1px solid #8886;padding-bottom:.3em}a{color:${if(dark) "#58a6ff" else "#0969da"}}pre{overflow:auto;padding:12px;background:${if(dark) "#161b22" else "#f6f8fa"};border-radius:8px}code{font-family:ui-monospace,monospace;font-size:.86em}table{display:block;overflow:auto;border-collapse:collapse}td,th{border:1px solid #8886;padding:6px 12px}blockquote{margin-left:0;border-left:3px solid #8886;padding-left:16px;color:#888}svg{max-width:100%}.anchor{display:none}input{pointer-events:none}
-        </style></head><body>$html</body></html>"""
+        </style></head><body>$contents$html</body></html>"""
+    }
 }
 
 suspend fun GitHub.data(path: String, query: Map<String, String> = emptyMap(), accept: String = "application/vnd.github.raw+json", limit: Int = 8_388_608): ByteArray = withContext(Dispatchers.IO) {

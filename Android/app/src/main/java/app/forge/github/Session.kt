@@ -71,18 +71,39 @@ class ForgeState(application: Application) : AndroidViewModel(application) {
     private var refreshValue by mutableIntStateOf(0)
     var refresh: Int
         get() = refreshValue
-        set(value) { responseCache.clear(); refreshValue = value }
+        set(value) { responseCache.clear(); screenValues.clear(); listPages.clear(); refreshValue = value }
     var tab by mutableIntStateOf(0)
     var notice by mutableStateOf<String?>(null)
     var signingIn by mutableStateOf(false)
     var showCopilot by mutableStateOf(prefs.getBoolean("copilot", true))
     private val stacks = List(4) { mutableStateListOf<Page>() }
     val stack get() = stacks[tab]
+    val navigationKey get() = "$tab/${stack.joinToString("/")}"
+    // Loaded content stays in memory; only small UI state goes into Android's saved-state Bundle.
+    val screenValues = mutableMapOf<String, Any>()
+    val listPages = mutableMapOf<String, Triple<List<JSONObject>, Int, Boolean>>()
     val drafts = mutableMapOf<String, EditorDraft>()
     val issueDrafts = mutableMapOf<String, IssueDraft>()
     val favorites = mutableStateListOf<String>().apply { addAll(runCatching { JSONArray(prefs.getString("favorites", "[]")).let { a -> (0 until a.length()).map { repository(a.getString(it)) } } }.getOrDefault(emptyList())) }
     val downloads = Downloads(application)
     val recoveries = mutableStateListOf<JSONObject>().apply { addAll(readRecoveries()) }
+
+    private fun offlineFolder(): java.io.File {
+        require(connected && validLogin(account)) { "Connect GitHub to manage offline copies." }
+        return java.io.File(getApplication<Application>().noBackupFilesDir, "offline/${account.lowercase()}").also { require(it.isDirectory || it.mkdirs()) { "Could not create offline storage." } }
+    }
+    private fun offlineFile(repo: String): java.io.File = java.io.File(offlineFolder(), Base64.getUrlEncoder().encodeToString(repository(repo).lowercase().toByteArray()) + ".json")
+    fun offlineCopies(): List<JSONObject> {
+        if (!connected) return emptyList()
+        return offlineFolder().listFiles()?.filter { it.extension == "json" }?.map { file -> JSONObject(file.readText()).also { require(validOfflineCopy(it)) { "An offline copy is damaged. Remove it by disconnecting in Settings." } } }?.sortedBy { it.s("repository").lowercase() } ?: emptyList()
+    }
+    fun saveOffline(copy: JSONObject, account: String) {
+        require(account == this.account && validOfflineCopy(copy)) { "The connected account changed. Try saving again." }
+        val file = android.util.AtomicFile(offlineFile(copy.s("repository"))); val output = file.startWrite()
+        try { output.write(copy.toString().toByteArray()); file.finishWrite(output) } catch (e: Exception) { file.failWrite(output); throw e }
+    }
+    fun deleteOffline(repo: String) { check(offlineFile(repo).delete()) { "Could not delete the offline copy." } }
+    private fun clearOffline() { if (connected && validLogin(account)) check(offlineFolder().deleteRecursively()) { "Could not remove offline copies. Retry before disconnecting." } }
 
     private fun readRecoveries(): List<JSONObject> = runCatching { JSONArray(prefs.getString("recoveries:${account.lowercase()}", "[]")).objects().filter(::validRecovery) }.getOrDefault(emptyList())
     fun saveRecovery(item: JSONObject, account: String) {
@@ -94,8 +115,12 @@ class ForgeState(application: Application) : AndroidViewModel(application) {
     }
 
     fun open(page: Page) { stack.add(page) }
-    fun back() { if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex) }
-    fun chooseTab(value: Int) { if (tab == value) stack.clear() else tab = value }
+    fun back() { if (stack.isNotEmpty()) {
+        val prefix = "$navigationKey|"
+        screenValues.keys.removeAll { it.startsWith(prefix) }; listPages.keys.removeAll { it.startsWith(prefix) }
+        stack.removeAt(stack.lastIndex)
+    } }
+    fun chooseTab(value: Int) { if (tab == value) while (stack.isNotEmpty()) back() else tab = value }
     fun favorite(repo: String) {
         val valid = repository(repo)
         if (favorites.contains(valid)) favorites.remove(valid) else favorites.add(valid)
@@ -107,16 +132,18 @@ class ForgeState(application: Application) : AndroidViewModel(application) {
     suspend fun connect(value: String) {
         require(value.trim().isNotEmpty() && !value.any { it == '\n' || it == '\r' }) { "Enter a GitHub access token." }
         val candidate = value.trim(); val login = GitHub(candidate).obj("/user").getString("login")
+        if (!login.equals(account, true)) clearOffline()
         downloads.cancelAll(); vault.save("oauth", "")
         val next = json("token" to candidate, "account" to login)
         vault.save("session", next.toString())
-        responseCache = APIMemoryCache(); session = next; generation++; stacks.forEach { it.clear() }; drafts.clear(); issueDrafts.clear()
+        responseCache = APIMemoryCache(); session = next; generation++; stacks.forEach { it.clear() }; drafts.clear(); issueDrafts.clear(); screenValues.clear(); listPages.clear()
         recoveries.clear(); recoveries.addAll(readRecoveries())
         notice = "Connected as $login"
     }
     fun disconnect() {
+        clearOffline()
         downloads.cancelAll(); vault.save("session", ""); vault.save("oauth", "")
-        responseCache = APIMemoryCache(); session = JSONObject(); generation++; stacks.forEach { it.clear() }; drafts.clear(); issueDrafts.clear()
+        responseCache = APIMemoryCache(); session = JSONObject(); generation++; stacks.forEach { it.clear() }; drafts.clear(); issueDrafts.clear(); screenValues.clear(); listPages.clear()
         recoveries.clear()
     }
 

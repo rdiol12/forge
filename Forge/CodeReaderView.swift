@@ -112,9 +112,18 @@ private extension CodeSyntax.Kind {
 
 struct MarkdownDocumentView: View {
     let text: String
+    var jump: ((Int) -> Void)? = nil
     var body: some View {
         LazyVStack(alignment: .leading, spacing: 16) {
+            if let jump {
+                Menu("Contents", systemImage: "list.bullet") {
+                    ForEach(MarkdownBlock.parse(text)) { block in
+                        if case .heading = block.kind { Button(block.text) { jump(block.id) } }
+                    }
+                }
+            }
             ForEach(MarkdownBlock.parse(text)) { block in
+                VStack(alignment: .leading, spacing: 8) {
                 switch block.kind {
                 case .heading(let level):
                     Text(inline(block.text)).font(level == 1 ? .title.bold() : level == 2 ? .title2.bold() : .headline).textSelection(.enabled)
@@ -132,10 +141,20 @@ struct MarkdownDocumentView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 10)).overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.secondary.opacity(0.2)))
                 case .rule: Divider()
                 }
+                }.id(block.id)
             }
         }.font(.body).lineSpacing(4)
     }
     private func inline(_ text: String) -> AttributedString {
         (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
+    }
+}
+
+struct MarkdownReader: View {
+    let text: String
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView { MarkdownDocumentView(text: text, jump: { id in withAnimation { proxy.scrollTo(id, anchor: .top) } }).padding() }
+        }
     }
 }

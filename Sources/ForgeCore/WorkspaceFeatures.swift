@@ -1,4 +1,46 @@
 import Foundation
+
+struct OfflineCopy: Codable, Identifiable, Sendable {
+    let repository: String
+    let branch: String
+    let sha: String
+    let saved: Date
+    let files: [String: String]
+    let omitted: Int
+    var id: String { repository }
+    var valid: Bool {
+        (try? Repository(repository)) != nil && GitReference.validBranchName(branch) && GitHistory.validSHA(sha) && omitted >= 0 && files.count <= 100 &&
+        files.values.reduce(0) { $0 + $1.utf8.count } <= 10_485_760 && files.allSatisfy { path, text in
+            RepositoryFile(name: "", path: path, sha: sha, type: "file", size: 0).safePath && text.utf8.count <= 1_048_576 && !text.utf8.contains(0)
+        }
+    }
+}
+
+extension GitHubClient {
+    func offlineCopy(in repository: Repository, branch: String, sha: String) async throws -> OfflineCopy {
+        guard GitReference.validBranchName(branch), GitHistory.validSHA(sha) else { throw GitHubError("Choose a valid branch revision.") }
+        struct Entry: Decodable { let path: String; let mode: String; let type: String; let sha: String; let size: Int? }
+        struct Tree: Decodable { let tree: [Entry]; let truncated: Bool }
+        struct Blob: Decodable { let content: String; let encoding: String; let size: Int }
+        let tree: Tree = try await get("/repos/\(repository.fullName)/git/trees/\(sha)", query: [URLQueryItem(name: "recursive", value: "1")])
+        guard !tree.truncated else { throw GitHubError("This repository is too large for an offline snapshot. Download individual files from Code.") }
+        let entries = tree.tree.filter { $0.type != "tree" }.sorted { $0.path < $1.path }
+        var files: [String: String] = [:], total = 0, fetched = 0
+        // ponytail: explicit snapshots are capped at 100 text files / 10 MiB; larger repositories can use individual downloads.
+        for entry in entries {
+            try Task.checkCancellation()
+            guard entry.type == "blob", ["100644", "100755"].contains(entry.mode), let size = entry.size, size >= 0, size <= 1_048_576,
+                  fetched < 100, total + size <= 10_485_760 else { continue }
+            guard GitHistory.validSHA(entry.sha), RepositoryFile(name: "", path: entry.path, sha: sha, type: "file", size: 0).safePath else { throw GitHubError("Invalid repository file metadata.") }
+            fetched += 1
+            let blob: Blob = try await get("/repos/\(repository.fullName)/git/blobs/\(entry.sha)")
+            guard blob.encoding == "base64", blob.size == size, let data = Data(base64Encoded: blob.content.filter { !$0.isWhitespace }), data.count == size else { throw GitHubError("GitHub returned an incomplete file. The previous offline copy is unchanged.") }
+            guard !data.contains(0), let text = String(data: data, encoding: .utf8) else { continue }
+            files[entry.path] = text; total += data.count
+        }
+        return OfflineCopy(repository: repository.fullName, branch: branch, sha: sha, saved: Date(), files: files, omitted: entries.count - files.count)
+    }
+}
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif

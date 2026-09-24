@@ -42,6 +42,8 @@ struct RunDetailView: View {
                 if let runError { ErrorNotice(message: runError) }
             }
 
+            if store.hasToken { DeploymentReviewSection(repository: entry.repository, runID: run.id) }
+
             Section {
                 if let artifactError { ErrorNotice(message: artifactError) }
                 if artifacts.isEmpty && !busy && artifactError == nil {
@@ -161,5 +163,45 @@ struct RunDetailView: View {
             jobPage += 1
             moreJobs = fetched.count == 100
         } catch { jobError = error.localizedDescription }
+    }
+}
+
+@MainActor
+private struct DeploymentReviewSection: View {
+    let repository: Repository
+    let runID: Int64
+    @Environment(ForgeStore.self) private var store
+    @State private var pending: [PendingDeployment] = []
+    @State private var selection: PendingDeployment?
+    @State private var approve = true
+    @State private var error: String?
+    var body: some View {
+        Section("Deployment reviews") {
+            ForEach(pending) { deployment in
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(deployment.environment.name).font(.headline)
+                    if deployment.currentUserCanApprove {
+                        HStack {
+                            Button("Approve") { approve = true; selection = deployment }.buttonStyle(.bordered)
+                            Button("Reject", role: .destructive) { approve = false; selection = deployment }.buttonStyle(.bordered)
+                        }
+                    } else { Text("Waiting for an eligible reviewer or protection rule.").font(.caption).foregroundStyle(.secondary) }
+                }
+            }
+            if pending.isEmpty && error == nil { Text("No pending deployment reviews.").foregroundStyle(.secondary) }
+            if let error { ErrorNotice(message: error) }
+            Button("Refresh deployments") { Task { await load() } }
+        }.task(id: runID) { await load() }
+        .sheet(item: $selection) { deployment in
+            CommentComposer(title: approve ? "Approve deployment" : "Reject deployment", context: "\(repository.fullName) · Run #\(runID) · \(deployment.environment.name)") { comment in
+                try await store.client.reviewDeployment(in: repository, runID: runID, environmentID: deployment.id, approved: approve, comment: comment)
+                await load()
+            }
+        }
+    }
+    private func load() async {
+        error = nil
+        do { await store.client.clearCache(); pending = try await store.client.pendingDeployments(in: repository, runID: runID) }
+        catch { self.error = error.localizedDescription }
     }
 }

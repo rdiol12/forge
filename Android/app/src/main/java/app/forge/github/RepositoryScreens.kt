@@ -18,10 +18,10 @@ import org.json.JSONObject
     var branchDialog by rememberSaveable { mutableStateOf(false) }; var pickingBranch by rememberSaveable { mutableStateOf(false) }
     var descriptionEditor by rememberSaveable { mutableStateOf(false) }; var selected by rememberSaveable { mutableStateOf(initialBranch) }
     Screen(horizontalPadding = 0) { Loaded(repo, load = { state.api.obj("/repos/${repository(repo)}") }) { info ->
-        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), horizontalAlignment = androidx.compose.ui.Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(repo.substringBefore('/'), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), horizontalAlignment = androidx.compose.ui.Alignment.Start, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) { Avatar(repo.substringBefore('/'), 40); Text(repo.substringBefore('/'), color = MaterialTheme.colorScheme.onSurfaceVariant) }
             Text(repo.substringAfter('/'), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-            if (info.s("description").isNotBlank()) Text(info.s("description"), textAlign = androidx.compose.ui.text.style.TextAlign.End)
+            if (info.s("description").isNotBlank()) Text(info.s("description"), textAlign = androidx.compose.ui.text.style.TextAlign.Start)
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Loaded(repo to "star", load = { state.api.isStarred(repo) }) { starred ->
                     TextButton(enabled = state.connected, onClick = { state.task {
@@ -45,7 +45,6 @@ import org.json.JSONObject
                         DropdownMenuItem(text = { Text("Repository settings") }, onClick = { menu = false; state.open(Page("repoSettings", "Repository settings", repo)) })
                     }
                 }
-                Spacer(Modifier.weight(1f))
                 TextButton(onClick = { state.open(Page("files", "Code", repo, branch = selected)) }) { Text("Code") }
                 TextButton(onClick = { state.open(Page("conversations", "Issues", repo, arg = "issue")) }) { Text("Issues") }
             }
@@ -55,6 +54,8 @@ import org.json.JSONObject
             RowLink("Releases", icon = R.drawable.ic_tag) { state.open(Page("releases", "Releases", repo)) }
             RowLink(if (more) "Less" else "More", icon = R.drawable.ic_repo) { more = !more }
             if (more) {
+                RowLink("Offline copy", icon = R.drawable.ic_download) { state.open(Page("offline", "Offline copy", repo, branch = selected.ifBlank { info.s("default_branch") })) }
+                if (info.optBoolean("has_wiki")) RowLink("Wiki", icon = R.drawable.ic_repo) { state.link(context, "https://github.com/$repo/wiki") }
                 RowLink("Contributors", icon = R.drawable.ic_person) { state.open(Page("community", "Contributors", repo, arg = "contributors")) }
                 RowLink("Watchers", "${info.optInt("subscribers_count")} watching", R.drawable.ic_person) { state.open(Page("community", "Watchers", repo, arg = "subscribers")) }
                 RowLink("License", info.o("license").s("name"), R.drawable.ic_repo) { state.open(Page("license", "License", repo)) }
@@ -66,7 +67,7 @@ import org.json.JSONObject
         val name = selected.ifBlank { info.s("default_branch") }
         Loaded(repo to name, load = { require(validBranch(name)); state.api.obj("/repos/$repo/git/ref/heads/$name").o("object").getString("sha") }) { sha ->
             Group(modifier = Modifier.padding(horizontal = 16.dp)) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.End) { TextButton(onClick = { pickingBranch = true }) { Text("$name \u2304") } }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.Start) { TextButton(onClick = { pickingBranch = true }) { Text("$name \u2304") } }
                 RowLink("Code", icon = R.drawable.ic_repo) { state.open(Page("files", "Code", repo, sha = sha, branch = name)) }
                 RowLink("Commits", icon = R.drawable.ic_repo) { state.open(Page("commits", "Commits", repo, sha = sha, branch = name)) }
             }

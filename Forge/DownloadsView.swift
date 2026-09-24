@@ -48,7 +48,11 @@ struct DownloadsView: View {
                                 }
                             } else {
                                 Text(entry.message ?? "File unavailable").font(.caption).foregroundStyle(.secondary)
-                                Button("Try again") { downloads.start(entry.specification, client: store.client) }.buttonStyle(.borderless)
+                                HStack {
+                                    Button("Try again") { downloads.start(entry.specification, client: store.client) }
+                                    Button("Remove", systemImage: "trash", role: .destructive) { deleting = entry }
+                                        .accessibilityLabel("Remove failed download")
+                                }.buttonStyle(.borderless)
                             }
                         }
                         .padding(.vertical, 8)
@@ -65,6 +69,6 @@ struct DownloadsView: View {
         .quickLookPreview($previewURL)
         .confirmationDialog("Delete this download?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
             if let entry = deleting { Button("Delete \(entry.specification.name)", role: .destructive) { previewURL = nil; downloads.remove(entry); deleting = nil } }
-        } message: { Text("Remove the file from Forge's download library. Files you exported elsewhere and files on GitHub are kept.") }
+        } message: { Text("Remove this entry and any saved file from Forge's download library. Files you exported elsewhere and files on GitHub are kept.") }
     }
 }

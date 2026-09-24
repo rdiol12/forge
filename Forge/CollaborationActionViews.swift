@@ -103,6 +103,7 @@ struct PullRequestActionsView: View {
     @State private var method = MergeMethod.merge
     @State private var review = false
     @State private var confirmMerge = false
+    @State private var confirmDraft = false
     @State private var busy = false
     @State private var merged = false
     @State private var reviewed = false
@@ -123,6 +124,9 @@ struct PullRequestActionsView: View {
                         if let sha = pull.head?.sha { LabeledContent("Commit", value: String(sha.prefix(12))).font(.caption.monospaced()) }
                     } header: { Text("\(repository.fullName) #\(String(number))").textCase(nil) }
                     Section("Review") {
+                        if pull.state == "open", pull.nodeId != nil, settings?.permissions?.push == true || pull.user?.login == store.account {
+                            Button(pull.draft == true ? "Ready for review" : "Convert to draft") { confirmDraft = true }.disabled(busy)
+                        }
                         Button("Submit a review") { review = true }.disabled(busy || merged || pull.state != "open" || pull.head?.sha == nil)
                         NavigationLink("Review conversations") { ReviewThreadsView(repository: repository, number: number) }
                         if reviewed { Label("Review submitted", systemImage: "checkmark.circle").foregroundStyle(.green) }
@@ -153,6 +157,16 @@ struct PullRequestActionsView: View {
         .refreshable { await store.client.clearCache(); await load() }
         .sheet(isPresented: $review) {
             if let sha = pull?.head?.sha { ReviewComposer(repository: repository, number: number, sha: sha) { reviewed = true } }
+        }
+        .confirmationDialog(pull?.draft == true ? "Mark ready for review?" : "Convert this PR to draft?", isPresented: $confirmDraft, titleVisibility: .visible) {
+            Button(pull?.draft == true ? "Ready for review" : "Convert to draft") { Task {
+                guard let id = pull?.nodeId, !busy else { return }
+                busy = true; error = nil
+                do { try await store.client.setPullDraft(id: id, draft: pull?.draft != true) }
+                catch { self.error = error.localizedDescription }
+                busy = false
+                if error == nil { await load() }
+            } }
         }
         .confirmationDialog("Merge \(repository.fullName) #\(String(number))?", isPresented: $confirmMerge, titleVisibility: .visible) {
             Button(method.title) { Task { await merge() } }

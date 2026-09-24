@@ -58,6 +58,7 @@ struct HomeView: View {
                 NavigationLink { AccountRepositoriesView(collection: .owned) } label: { WorkLabel("Repositories", icon: "repo", color: Color(white: 0.28)) }
                 NavigationLink { OrganizationListView() } label: { WorkLabel("Organizations", icon: "organization", color: .orange) }
                 NavigationLink { AccountRepositoriesView(collection: .starred) } label: { WorkLabel("Starred", icon: "star", color: .yellow) }
+                NavigationLink { OfflineLibraryView() } label: { Label("Offline repositories", systemImage: "arrow.down.doc") }
             } header: {
                 HStack {
                     Text("My Work").font(.headline)

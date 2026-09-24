@@ -48,6 +48,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var token = ""
     @State private var signIn = GitHubSignIn()
+    @State private var disconnecting = false
     @AppStorage("showCopilot") private var showCopilot = false
     @State private var busy = false
     @State private var error: String?
@@ -92,14 +93,11 @@ struct SettingsView: View {
                     }.disabled(token.isEmpty || busy)
                     }
                     if store.hasToken {
-                        Button("Disconnect", role: .destructive) {
-                            do { try store.disconnect(); downloads.cancelAll() }
-                            catch { self.error = error.localizedDescription }
-                        }.disabled(busy)
+                        Button("Disconnect", role: .destructive) { disconnecting = true }.disabled(busy)
                     }
                     if let error { ErrorNotice(message: error) }
                 } header: { Text("GitHub account") }
-                  footer: { Text("You sign in on GitHub's secure page. Forge stores the access token in this iPhone's Keychain. Signing into a GitHub web page doesn't connect the native app. OAuth requests repo, notifications, user, project and workflow scopes for repository changes, Inbox, profile/follow controls, Projects and workflow-file edits. Disconnecting stops active downloads; files you've saved remain in Downloads.") }
+                  footer: { Text("You sign in on GitHub's secure page. Forge stores the access token in this iPhone's Keychain. Signing into a GitHub web page doesn't connect the native app. OAuth requests repo, notifications, user, project and workflow scopes for repository changes, Inbox, profile/follow controls, Projects and workflow-file edits. Disconnecting stops active downloads and removes offline repository copies; files you've saved remain in Downloads.") }
 
                 Section("Home") {
                     Toggle("Show Copilot shortcut", isOn: $showCopilot)
@@ -148,6 +146,12 @@ struct SettingsView: View {
             .navigationTitle("Settings").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.disabled(busy) } }
             .interactiveDismissDisabled(busy)
+            .confirmationDialog("Disconnect GitHub?", isPresented: $disconnecting, titleVisibility: .visible) {
+                Button("Disconnect", role: .destructive) {
+                    do { try store.disconnect(); downloads.cancelAll() }
+                    catch { self.error = error.localizedDescription }
+                }
+            } message: { Text("Active downloads stop and offline repository copies are removed. Downloaded files and favorites remain on this device.") }
         }
         .inAppLinks()
     }

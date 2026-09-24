@@ -156,7 +156,7 @@ struct RepositoryFileView: View {
                 if markdown || prettyJSON != nil {
                     Picker("Display", selection: $source) { Text(markdown ? "Preview" : "Formatted").tag(false); Text("Source").tag(true) }.pickerStyle(.segmented).padding(.horizontal).padding(.vertical, 8)
                 }
-                if markdown && !source { ScrollView { MarkdownDocumentView(text: code).padding() } }
+                if markdown && !source { MarkdownReader(text: code) }
                 else { CodeTextView(text: !source ? prettyJSON ?? code : code, filename: file.name) }
             }
             else if let error {
@@ -171,6 +171,7 @@ struct RepositoryFileView: View {
         }.navigationTitle(file.name).navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .toolbar {
+            Button { UIPasteboard.general.string = file.path } label: { Label("Copy path", systemImage: "doc.on.doc") }
             if store.hasToken, branch != nil, code != nil, file.name.lowercased().hasPrefix("readme") { Button("Edit") { edit = true } }
         }
         .sheet(isPresented: $edit) {
@@ -186,5 +187,89 @@ struct RepositoryFileView: View {
         defer { busy = false }
         do { let text = try await store.client.codeText(in: repository, file: currentFile); guard !Task.isCancelled else { return }; code = text }
         catch { if !Task.isCancelled { self.error = error.localizedDescription } }
+    }
+}
+
+
+@MainActor
+struct OfflineLibraryView: View {
+    @Environment(ForgeStore.self) private var store
+    @State private var copies: [OfflineCopy] = []
+    @State private var error: String?
+    var body: some View {
+        List {
+            Text("Saved code and documents work without a connection. Save a branch from Repository > More > Offline copy. Copies are removed when you disconnect or change accounts.").font(.footnote).foregroundStyle(.secondary)
+            ForEach(copies) { copy in
+                if let repo = try? Repository(copy.repository) {
+                    NavigationLink { OfflineRepositoryView(repository: repo) } label: {
+                        VStack(alignment: .leading) { Text(copy.repository); Text("\(copy.branch) ? \(copy.files.count) files").font(.caption).foregroundStyle(.secondary) }
+                    }
+                }
+            }
+            if copies.isEmpty { Text("No offline repositories saved.").foregroundStyle(.secondary) }
+            if let error { ErrorNotice(message: error) }
+        }.navigationTitle("Offline repositories").task(id: store.account) {
+            do { copies = try store.offlineCopies() } catch { self.error = error.localizedDescription }
+        }
+    }
+}
+
+@MainActor
+struct OfflineRepositoryView: View {
+    let repository: Repository
+    var branch: RepositoryBranch? = nil
+    @Environment(ForgeStore.self) private var store
+    @State private var copy: OfflineCopy?
+    @State private var error: String?
+    @State private var busy = false
+    @State private var deleting = false
+    @State private var search = ""
+    var body: some View {
+        List {
+            Section {
+                Text("Save up to 100 UTF-8 code and document files, 1 MiB each and 10 MiB total. Images, history, submodules, and other omitted files need a connection. One branch per repository is stored on this device.").font(.footnote).foregroundStyle(.secondary)
+                if let copy {
+                    LabeledContent("Branch", value: copy.branch)
+                    LabeledContent("Revision", value: String(copy.sha.prefix(8)))
+                    Text("Saved \(copy.saved.formatted()) ? \(copy.files.count) files ? \(copy.omitted) omitted").font(.caption)
+                }
+                if branch != nil || copy != nil { Button(copy == nil ? "Save branch offline" : "Update offline copy") { Task { await save() } }.disabled(busy || !store.hasToken) }
+                if copy != nil { Button("Delete offline copy", role: .destructive) { deleting = true }.disabled(busy) }
+                if busy { ProgressView("Saving files?") }
+                if let error { ErrorNotice(message: error) }
+            }
+            if let copy {
+                Section("Saved files") {
+                    ForEach(copy.files.keys.sorted().filter { search.isEmpty || $0.localizedCaseInsensitiveContains(search) }, id: \.self) { path in
+                        NavigationLink {
+                            Group {
+                                if ["md", "markdown"].contains((path as NSString).pathExtension.lowercased()) { MarkdownReader(text: copy.files[path] ?? "") }
+                                else { CodeTextView(text: copy.files[path] ?? "", filename: path) }
+                            }.navigationTitle((path as NSString).lastPathComponent).navigationBarTitleDisplayMode(.inline)
+                            .toolbar { Button { UIPasteboard.general.string = path } label: { Label("Copy path", systemImage: "doc.on.doc") } }
+                        } label: { Label(path, systemImage: "doc.text") }
+                    }
+                }
+            }
+        }.navigationTitle("Offline copy").searchable(text: $search, prompt: "Find saved files")
+        .task(id: store.account) { load() }
+        .confirmationDialog("Delete the offline copy of \(repository.fullName)?", isPresented: $deleting) {
+            Button("Delete local copy", role: .destructive) { do { try store.deleteOffline(repository.fullName); copy = nil } catch { self.error = error.localizedDescription } }
+        }
+    }
+    private func load() {
+        do { copy = try store.offlineCopies().first { $0.repository.lowercased() == repository.fullName.lowercased() } }
+        catch { self.error = error.localizedDescription }
+    }
+    private func save() async {
+        busy = true; error = nil; defer { busy = false }
+        do {
+            let account = store.account, client = store.client
+            guard let name = branch?.name ?? copy?.branch else { throw GitHubError("Choose a branch first.") }
+            await client.clearCache()
+            let ref: GitReference = try await client.get("/repos/\(repository.fullName)/git/ref/heads/\(name)")
+            let value = try await client.offlineCopy(in: repository, branch: name, sha: ref.object.sha)
+            try store.saveOffline(value, account: account); copy = value
+        } catch { self.error = error.localizedDescription }
     }
 }

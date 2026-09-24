@@ -20,7 +20,7 @@ struct GitHubClient: Sendable {
         self.cache = cache
     }
 
-    // Private repository responses and credentials are never cached to disk.
+    // Live API responses and credentials are not cached to disk. Explicit offline copies are stored separately.
     private static let sharedSession = URLSession(configuration: .ephemeral, delegate: GitHubRedirectDelegate(), delegateQueue: nil)
 
     static func decoder() -> JSONDecoder {

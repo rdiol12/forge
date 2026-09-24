@@ -233,7 +233,11 @@ extension DownloadManager {
                 }
                 guard valid(try Data(contentsOf: file)) else { throw GitHubError("Unexpected contents in \(specification.name).") }
             }
-            result = ["status": "passed", "check": "Release, Actions artifact and repository file saved through the iOS download manager"]
+            let failed = DownloadEntry(id: UUID(), specification: cases[0].0, createdAt: Date(), message: "Failed transfer", active: false)
+            entries.append(failed); persist(); remove(failed)
+            let restored = try JSONDecoder().decode([DownloadEntry].self, from: Data(contentsOf: manifest))
+            guard !entries.contains(where: { $0.id == failed.id }), !restored.contains(where: { $0.id == failed.id }) else { throw GitHubError("A removed failed download returned to the library.") }
+            result = ["status": "passed", "check": "Release, Actions artifact and repository file saved; failed download removed and persisted"]
         } catch { result = ["status": "failed", "error": error.localizedDescription, "trace": downloadCheckTrace.joined(separator: " | ")] }
         try? JSONEncoder().encode(result).write(to: resultFile, options: .atomic)
     }

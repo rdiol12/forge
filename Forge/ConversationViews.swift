@@ -305,6 +305,7 @@ private struct PullCommentsView: View {
 
 @MainActor
 private struct PullFilesView: View {
+    @State private var filter = ""
     let repository: Repository
     let number: Int
     @Environment(ForgeStore.self) private var store
@@ -316,7 +317,7 @@ private struct PullFilesView: View {
     @State private var sha: String?
     var body: some View {
         List {
-            ForEach(files) { file in
+            ForEach(files.filter { filter.isEmpty || $0.filename.localizedCaseInsensitiveContains(filter) }) { file in
                 NavigationLink {
                     PullDiffView(repository: repository, number: number, file: file, sha: sha)
                 } label: {
@@ -331,6 +332,7 @@ private struct PullFilesView: View {
             if more && !busy { Button("Load more files") { Task { await load() } } }
             if files.count >= 3000 { Text("GitHub returns at most 3,000 changed files per pull request.").font(.footnote).foregroundStyle(.secondary) }
         }.navigationTitle("Files changed").navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $filter, prompt: "Filter loaded files by name or path")
         .task { if page == 0 { await load() } }
         .refreshable { await store.client.clearCache(); if !busy { files = []; page = 0; sha = nil; await load() } }
     }

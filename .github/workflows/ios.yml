@@ -302,7 +302,11 @@ jobs:
           - **iOS 17+:** download Forge-unsigned.ipa and sign it with your sideloading tool before installing. No Apple certificate or provisioning profile is included.
           - **Android 8.0+:** download and install Forge-android.apk. It uses Forge's persistent signing key so future builds can update the same app.
 
-          Fixed the iPhone release-download failure when GitHub redirects with an empty response body. Added a shared GitHub-style Forge app icon and the installed version/build number in Settings. Repository READMEs use the available width without a surrounding card; the line below the branch selector is removed. The iPhone simulator now downloads and checks real release, Actions-artifact and repository files before publication.
+          New in 0.9: deployment approvals/rejections from Actions runs; draft/ready PR controls; changed-file filtering; copy file paths; README and Markdown contents navigation; saved code/document snapshots for offline reading; in-app Wiki access; and list position, filters and loaded-page restoration. Repository headers, shortcuts, branches and README headings align left, with a larger avatar. Failed downloads have a visible Remove control.
+
+          Offline copies save up to 100 text files (1 MiB each / 10 MiB total) from one branch per repository. Omitted files are counted; images, full Git history and live collaboration need a connection. Copies stay on this device and are removed on disconnect/account change. Wiki uses GitHub's page in the in-app browser; private Wiki access requires website sign-in.
+
+          iPhone downloads recover in the foreground if the background download service rejects a transfer. The iPhone simulator checks real release, Actions-artifact and repository downloads before publication. Includes the shared Forge icon, installed version/build in Settings and full-width repository READMEs.
 
           New in 0.8: repository cards and menus; README images, tables and editing; profile pins, followers and account editing; native issue creation with assignees, labels, milestones and Projects; Actions grouped by repository; releases sorted newest first; response caching and local download deletion. Includes branch switching, syntax-colored code, artifacts, per-release-file download counts, native Discussions, PR reviews and confirmed merges.
 

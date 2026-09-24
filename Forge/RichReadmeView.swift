@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 struct RichReadmeView: UIViewRepresentable {
     let document: ReadmeDocument
     @Binding var height: CGFloat
+    var scrolling = false
     @Environment(ForgeStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     @Environment(\.openURL) private var openURL
@@ -18,14 +19,14 @@ struct RichReadmeView: UIViewRepresentable {
         config.setURLSchemeHandler(context.coordinator, forURLScheme: "forge-readme")
         let view = WKWebView(frame: .zero, configuration: config)
         view.navigationDelegate = context.coordinator
-        view.isOpaque = false; view.backgroundColor = .clear; view.scrollView.isScrollEnabled = false
-        context.coordinator.observation = view.scrollView.observe(\.contentSize, options: [.new]) { scroll, _ in
+        view.isOpaque = false; view.backgroundColor = .clear; view.scrollView.isScrollEnabled = scrolling
+        if !scrolling { context.coordinator.observation = view.scrollView.observe(\.contentSize, options: [.new]) { scroll, _ in
             DispatchQueue.main.async { if abs(context.coordinator.height.wrappedValue - scroll.contentSize.height) > 1 { context.coordinator.height.wrappedValue = max(80, scroll.contentSize.height) } }
-        }
+        } }
         return view
     }
     func updateUIView(_ view: WKWebView, context: Context) {
-        let html = document.page(dark: scheme == .dark)
+        let html = document.page(dark: scheme == .dark, outline: scrolling)
         guard context.coordinator.loaded != html else { return }
         context.coordinator.loaded = html; view.loadHTMLString(html, baseURL: document.baseURL)
     }
@@ -78,11 +79,14 @@ struct ReadmeCard: View {
     @State private var error: String?
     @State private var height: CGFloat = 80
     @State private var editingText: String?
+    @State private var reading = false
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
+                Label(file?.name ?? "README", systemImage: "doc.richtext").font(.headline)
                 if canEdit, store.hasToken, let file { Button { Task { do { editingText = try await store.client.codeText(in: repository, file: file) } catch { self.error = error.localizedDescription } } } label: { Label("Edit", systemImage: "pencil") } }
-                Spacer(); Label(file?.name ?? "README", systemImage: "doc.richtext").font(.headline)
+                if document?.headings.isEmpty == false { Button { reading = true } label: { Label("Contents", systemImage: "list.bullet") } }
+                Spacer(minLength: 0)
             }.padding(16)
             Divider()
             if let document { RichReadmeView(document: document, height: $height).id(branch.commit.sha).frame(height: height) }
@@ -90,6 +94,9 @@ struct ReadmeCard: View {
             else { ProgressView("Loading README…").padding() }
             if document != nil, let error { ErrorNotice(message: error).padding() }
         }.task(id: "\(store.account):\(branch.commit.sha)") { await load() }
+        .fullScreenCover(isPresented: $reading) {
+            if let document { NavigationStack { RichReadmeView(document: document, height: .constant(0), scrolling: true).navigationTitle(file?.name ?? "README").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { reading = false } } } } }
+        }
         .sheet(isPresented: Binding(get: { editingText != nil }, set: { if !$0 { editingText = nil } })) {
             if let file, let editingText { FileEditor(repository: repository, file: file, branch: branch.name, initialText: editingText) { _, _ in self.editingText = nil; onEdited() } }
         }

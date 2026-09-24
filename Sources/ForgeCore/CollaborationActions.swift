@@ -3,6 +3,40 @@ import Foundation
 import FoundationNetworking
 #endif
 
+struct PendingDeployment: Decodable, Identifiable, Sendable {
+    struct Environment: Decodable, Sendable { let id: Int64; let name: String }
+    let environment: Environment
+    let currentUserCanApprove: Bool
+    var id: Int64 { environment.id }
+}
+
+extension GitHubClient {
+    func pendingDeployments(in repository: Repository, runID: Int64) async throws -> [PendingDeployment] {
+        guard runID > 0 else { throw GitHubError("Invalid workflow run.") }
+        return try await get("/repos/\(repository.fullName)/actions/runs/\(runID)/pending_deployments")
+    }
+
+    func reviewDeployment(in repository: Repository, runID: Int64, environmentID: Int64, approved: Bool, comment: String) async throws {
+        guard environmentID > 0, !comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw GitHubError("Add a deployment review comment.") }
+        await clearCache()
+        let pending = try await pendingDeployments(in: repository, runID: runID)
+        guard pending.contains(where: { $0.id == environmentID && $0.currentUserCanApprove }) else { throw GitHubError("This deployment is no longer waiting for you, or you are not an eligible reviewer. Refresh the run.") }
+        let data = try await mutationData("/repos/\(repository.fullName)/actions/runs/\(runID)/pending_deployments", body: ["environment_ids": [environmentID], "state": approved ? "approved" : "rejected", "comment": comment])
+        guard let result = try JSONSerialization.jsonObject(with: data) as? [[String: Any]], !result.isEmpty else { throw GitHubError("GitHub did not confirm the deployment review. Refresh before retrying.") }
+    }
+
+    func setPullDraft(id: String, draft: Bool) async throws {
+        guard !id.isEmpty else { throw GitHubError("Refresh the pull request first.") }
+        struct Result: Decodable {
+            struct Update: Decodable { struct Pull: Decodable { let isDraft: Bool }; let pullRequest: Pull? }
+            let result: Update?
+        }
+        let mutation = draft ? "convertPullRequestToDraft" : "markPullRequestReadyForReview"
+        let result: Result = try await graphQL("mutation($id:ID!){result:\(mutation)(input:{pullRequestId:$id}){pullRequest{isDraft}}}", variables: ["id": id])
+        guard result.result?.pullRequest?.isDraft == draft else { throw GitHubError("GitHub did not confirm the PR status. Refresh before retrying.") }
+    }
+}
+
 enum ReviewEvent: String, CaseIterable, Sendable {
     case comment = "COMMENT", approve = "APPROVE", requestChanges = "REQUEST_CHANGES"
     var title: String { switch self { case .comment: "Comment"; case .approve: "Approve"; case .requestChanges: "Request changes" } }

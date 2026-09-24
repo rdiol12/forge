@@ -63,10 +63,12 @@ struct IssueOption: Identifiable, Hashable, Sendable {
 struct IssueOptionPage: Sendable { let items: [IssueOption]; let more: Bool; var cursor: String? = nil }
 
 struct ReadmeDocument: Sendable {
+    struct Heading: Identifiable, Sendable { let id: String; let title: String; let level: Int }
     let repository: Repository
     let sha: String
     let path: String
     let html: String
+    let headings: [Heading]
     var baseURL: URL { var c = URLComponents(); c.scheme = "https"; c.host = "github.com"; c.path = "/\(repository.fullName)/blob/\(sha)/\(path)"; return c.url! }
 
     init(html: String, repository: Repository, sha: String, path: String) throws {
@@ -92,6 +94,14 @@ struct ReadmeDocument: Sendable {
             }
             source = (source as NSString).replacingCharacters(in: match.range, with: "src=\"\(Self.escape(replacement))\"")
         }
+        let pattern = try NSRegularExpression(pattern: #"<h([1-6])\b[^>]*>(.*?)</h\1>"#, options: [.caseInsensitive, .dotMatchesLineSeparators])
+        let matches = pattern.matches(in: source, range: NSRange(source.startIndex..., in: source))
+        headings = matches.enumerated().map { index, match in
+            var title = (source as NSString).substring(with: match.range(at: 2)).replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+            for (entity, value) in [("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\""), ("&#39;", "'"), ("&nbsp;", " "), ("&amp;", "&")] { title = title.replacingOccurrences(of: entity, with: value) }
+            return Heading(id: "forge-section-\(index)", title: title.trimmingCharacters(in: .whitespacesAndNewlines), level: Int((source as NSString).substring(with: match.range(at: 1))) ?? 1)
+        }
+        for (index, match) in matches.enumerated().reversed() { source = (source as NSString).replacingCharacters(in: NSRange(location: match.range.location, length: 0), with: "<span id=\"forge-section-\(index)\"></span>") }
         self.html = source
     }
 
@@ -102,11 +112,12 @@ struct ReadmeDocument: Sendable {
     }
 
     static func escape(_ value: String) -> String { value.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "\"", with: "&quot;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;") }
-    func page(dark: Bool) -> String {
-        """
+    func page(dark: Bool, outline: Bool = false) -> String {
+        let contents = outline && !headings.isEmpty ? "<nav aria-label=\"Contents\"><details open><summary>Contents</summary>" + headings.map { "<p style=\"margin:6px 0 6px \(($0.level - 1) * 12)px\"><a href=\"#\($0.id)\">\(Self.escape($0.title))</a></p>" }.joined() + "</details></nav>" : ""
+        return """
         <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; img-src https: forge-readme:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"><style>
         :root{color-scheme:\(dark ? "dark" : "light")}body{margin:0;padding:16px;font:16px -apple-system,BlinkMacSystemFont,Roboto,sans-serif;line-height:1.55;overflow-wrap:anywhere;color:\(dark ? "#e6edf3" : "#1f2328");background:\(dark ? "#0d1117" : "white")}img,video{max-width:100%;height:auto}h1,h2{border-bottom:1px solid \(dark ? "#30363d" : "#d0d7de");padding-bottom:.3em}a{color:\(dark ? "#58a6ff" : "#0969da")}pre{overflow:auto;padding:12px;background:\(dark ? "#161b22" : "#f6f8fa");border-radius:8px}code{font-family:ui-monospace,monospace;font-size:.86em}table{display:block;overflow:auto;border-collapse:collapse}td,th{border:1px solid #8886;padding:6px 12px}blockquote{margin-left:0;border-left:3px solid #8886;padding-left:16px;color:#888}svg{max-width:100%}.anchor{display:none}input{pointer-events:none}
-        </style></head><body>\(html)</body></html>
+        </style></head><body>\(contents)\(html)</body></html>
         """
     }
 }

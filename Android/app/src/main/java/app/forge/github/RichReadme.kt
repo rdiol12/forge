@@ -13,29 +13,31 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.runBlocking
 import java.io.ByteArrayInputStream
 import java.net.URI
 import java.net.URLConnection
 
-@Composable fun RichReadme(document: ReadmeDocument) {
+@Composable fun RichReadme(document: ReadmeDocument, scrolling: Boolean = false) {
     val state = LocalForge.current; val api = state.api
     val dark = MaterialTheme.colorScheme.surface.luminance() < .5f
     var height by remember(document) { mutableIntStateOf(80) }
-    val html = remember(document, dark) { document.page(dark) }
-    AndroidView(modifier = Modifier.fillMaxWidth().height(height.dp), factory = { context ->
+    val html = remember(document, dark, scrolling) { document.page(dark, outline = scrolling) }
+    AndroidView(modifier = if (scrolling) Modifier.fillMaxSize() else Modifier.fillMaxWidth().height(height.dp), factory = { context ->
         object : WebView(context) {
             override fun onDraw(canvas: Canvas) {
                 super.onDraw(canvas)
                 val next = contentHeight.coerceAtLeast(80)
-                if (kotlin.math.abs(next - height) > 1) post { height = next }
+                if (!scrolling && kotlin.math.abs(next - height) > 1) post { height = next }
             }
         }.apply {
             settings.javaScriptEnabled = false; settings.allowFileAccess = false; settings.allowContentAccess = false
             settings.domStorageEnabled = false; settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
             settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
-            isVerticalScrollBarEnabled = false; setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            isVerticalScrollBarEnabled = scrolling; setBackgroundColor(android.graphics.Color.TRANSPARENT)
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     val url = request.url.toString()
@@ -61,13 +63,21 @@ private fun emptyImage() = WebResourceResponse("text/plain", "UTF-8", ByteArrayI
 
 @Composable fun ReadmeCard(repo: String, branch: String, sha: String, canEdit: Boolean = true) {
     val state = LocalForge.current
+    var reading by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth()) {
         Loaded("$repo:$sha", load = { state.api.readme(repo, sha) }) { (file, document) ->
-            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(file.s("name"), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(8.dp))
                 if (canEdit && state.connected) TextButton(onClick = { state.open(Page("file", file.s("name"), repo, id = "edit", arg = file.s("path"), sha = file.s("sha"), branch = branch)) }) { Text("Edit") }
-                Text(file.s("name"), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp))
+                if (document.headings.isNotEmpty()) TextButton(onClick = { reading = true }) { Text("Contents") }
             }
             HorizontalDivider(); key(sha) { RichReadme(document) }
+            if (reading) Dialog(onDismissRequest = { reading = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+                Surface(Modifier.fillMaxSize()) { Column(Modifier.safeDrawingPadding()) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(file.s("name"), Modifier.padding(16.dp)); TextButton(onClick = { reading = false }) { Text("Done") } }
+                    RichReadme(document, scrolling = true)
+                } }
+            }
         }
     }
 }

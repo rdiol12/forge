@@ -26,12 +26,11 @@ struct RepositoryView: View {
     private var repositoryList: some View {
         List {
             Section {
-                VStack(alignment: .trailing, spacing: 12) {
-                    HStack { Spacer(); Avatar(login: repository.fullName.components(separatedBy: "/")[0], size: 22); Text(repository.fullName.components(separatedBy: "/")[0]).foregroundStyle(.secondary) }
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack { Avatar(login: repository.fullName.components(separatedBy: "/")[0], size: 40); Text(repository.fullName.components(separatedBy: "/")[0]).foregroundStyle(.secondary); Spacer() }
                     Text(repository.name).font(.title.bold())
-                    if let text = info?.description ?? summary?.description, !text.isEmpty { Text(text).multilineTextAlignment(.trailing).textSelection(.enabled) }
+                    if let text = info?.description ?? summary?.description, !text.isEmpty { Text(text).multilineTextAlignment(.leading).textSelection(.enabled) }
                     HStack(spacing: 20) {
-                        Spacer()
                         Button { Task { await star() } } label: { Label((info?.stargazersCount ?? summary?.stargazersCount).map { $0.formatted() } ?? "—", systemImage: starred ? "star.fill" : "star") }
                             .accessibilityLabel(starred ? "Unstar repository" : "Star and add to favorites").disabled(busy || !store.hasToken)
                         Button { showingForks = true } label: { Label(info.map { $0.forksCount.formatted() } ?? "—", systemImage: "arrow.triangle.branch") }.accessibilityLabel("Forks")
@@ -49,7 +48,6 @@ struct RepositoryView: View {
                         NavigationLink { CreateBranchView(repository: repository) } label: { Label("Create branch", systemImage: "arrow.triangle.branch") }
                         NavigationLink { RepositorySettingsView(repository: repository) } label: { Label("Repository settings", systemImage: "gearshape") }
                     } label: { Image(systemName: "ellipsis").frame(width: 40, height: 34) }.accessibilityLabel("Repository options")
-                    Spacer()
                     Button("Code") { showingCode = true }
                     Button("Issues") { showingIssues = true }
                 }.buttonStyle(.borderless)
@@ -58,6 +56,8 @@ struct RepositoryView: View {
                 NavigationLink { ActionsView(repository: repository) } label: { WorkLabel("Actions", icon: "workflow", color: .blue) }
                 NavigationLink { ReleasesView(repository: repository) } label: { WorkLabel("Releases", icon: "tag", color: .green) }
                 DisclosureGroup("More", isExpanded: $more) {
+                    NavigationLink { OfflineRepositoryView(repository: repository, branch: branch) } label: { Label("Offline copy", systemImage: "arrow.down.doc") }
+                    Link(destination: URL(string: "https://github.com/\(repository.fullName)/wiki")!) { Label("Wiki", systemImage: "book") }
                     NavigationLink { RepositoryCommunityView(repository: repository, kind: "Contributors") } label: { Label("Contributors", systemImage: "person.2") }
                     NavigationLink { RepositoryCommunityView(repository: repository, kind: "Watchers") } label: { Label("Watchers\(info?.subscribersCount.map { " · \($0.formatted())" } ?? "")", systemImage: "eye") }
                     NavigationLink { RepositoryLicenseView(repository: repository) } label: { Label(info?.license?.name ?? "License", systemImage: "doc.text") }
@@ -67,7 +67,7 @@ struct RepositoryView: View {
                 }
             }
             Section {
-                HStack { Spacer(); Button { choosingBranch = true } label: { Label(branch?.name ?? "Choose branch", systemImage: "arrow.triangle.branch"); Image(systemName: "chevron.down").font(.caption) } }.buttonStyle(.borderless)
+                HStack { Button { choosingBranch = true } label: { Label(branch?.name ?? "Choose branch", systemImage: "arrow.triangle.branch"); Image(systemName: "chevron.down").font(.caption) }; Spacer() }.buttonStyle(.borderless)
                     .listRowSeparator(.hidden)
                 NavigationLink { RepositoryFilesView(repository: repository, revision: branch) } label: { WorkLabel("Code", icon: "repo", color: .gray) }
                     .listRowSeparator(.hidden, edges: .top)
