@@ -26,11 +26,15 @@ class NavigationTest {
         compose.setContent { ForgeTheme { androidx.compose.runtime.CompositionLocalProvider(LocalForge provides state) { DownloadButton(spec) } } }
         compose.onNodeWithText("Download").performTouchInput { longClick() }
         compose.onNodeWithText("Copy download link").assertIsDisplayed().performClick()
+        val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
+        // Android returns no clipboard data while focus moves back from the dismissed popup.
+        compose.waitUntil(5_000) { compose.runOnIdle { clipboard.primaryClip?.getItemAt(0)?.text?.toString() == spec.downloadURL } }
         compose.runOnIdle {
-            assertEquals(spec.downloadURL, context.getSystemService(android.content.ClipboardManager::class.java).primaryClip!!.getItemAt(0).text.toString())
+            assertEquals("Download link copied.", state.notice)
             assertEquals(initial, state.downloads.entries.size)
         }
     }
+
     @Test fun homePullRequestsShowContributionsToOwnedRepositories() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val vault = Vault(context); val original = vault.read("session")
