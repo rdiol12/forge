@@ -117,9 +117,9 @@ private val avatars = android.util.LruCache<String, android.graphics.Bitmap>(40)
             if (!mine) following = runCatching { state.api.isFollowing(login) }.getOrNull()
         }
     }
-    Screen { Loaded(login, load = { require(validLogin(login)); state.api.obj(if (mine) "/user" else "/users/$login") }) { user ->
+    Screen(horizontalPadding = 0) { Loaded(login, load = { require(validLogin(login)); state.api.obj(if (mine) "/user" else "/users/$login") }) { user ->
         val organization = user.s("type") == "Organization"
-        Group {
+        Group(modifier = Modifier.padding(horizontal = 16.dp)) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     Avatar(login, 76)
@@ -139,7 +139,7 @@ private val avatars = android.util.LruCache<String, android.graphics.Bitmap>(40)
                 }) { Text(if (following == true) "Unfollow" else "Follow") }
             }
         }
-        Group {
+        Group(modifier = Modifier.padding(horizontal = 16.dp)) {
             RowLink(if (mine) "Your repositories" else "Repositories", icon = R.drawable.ic_repo) { state.open(Page("repos", "Repositories", id = login, arg = if (mine) "owned" else if (organization) "org" else "user")) }
             if (!organization) {
                 RowLink("Starred repositories", icon = R.drawable.ic_star) { state.open(Page("repos", "Starred", id = login, arg = if (mine) "starred" else "stars")) }
@@ -148,7 +148,7 @@ private val avatars = android.util.LruCache<String, android.graphics.Bitmap>(40)
             if (mine) RowLink("Your repository Actions", icon = R.drawable.ic_workflow) { state.open(Page("ownedActions", "Your Actions")) }
         }
         if (!organization) {
-            Group("Pinned repositories") {
+            Group("Pinned repositories", modifier = Modifier.padding(horizontal = 16.dp)) {
                 val pins = highlights?.o("pinnedItems")?.rows("nodes").orEmpty()
                 if (pins.isEmpty()) Note(if (state.connected) "No pinned repositories available." else "Connect GitHub to see pinned repositories.")
                 pins.forEach { pin -> RowLink(pin.s("nameWithOwner"), pin.s("description") + " ? ? ${pin.optInt("stargazerCount")}") { val repo = repository(pin.s("nameWithOwner")); state.open(Page("repo", repo.substringAfter('/'), repo)) } }

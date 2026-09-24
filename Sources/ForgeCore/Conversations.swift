@@ -182,7 +182,7 @@ extension GitHubClient {
 
     func conversations(kind: ConversationKind, repository: Repository?, account: String, search: String, state: String, page: Int, cursor: String?) async throws -> ConversationPage {
         guard repository != nil || (!token.isEmpty && !account.isEmpty) else { throw GitHubError("Connect GitHub in Settings to see your conversations, or open a public repository from Favorites.") }
-        let scope = repository.map { "repo:\($0.fullName)" } ?? "involves:\(account)"
+        let scope = repository.map { "repo:\($0.fullName)" } ?? (kind == .discussion ? "involves:\(account)" : "(user:\(account) OR involves:\(account))")
         if kind == .discussion {
             struct Result: Decodable { let search: GraphQLConnection<Conversation> }
             let result: Result = try await graphQL("""
@@ -193,7 +193,7 @@ extension GitHubClient {
         struct Result: Decodable { let items: [Conversation] }
         let filter = state == "open" || state == "closed" ? "is:\(state)" : ""
         let query = "is:\(kind == .issue ? "issue" : "pr") \(scope) \(filter) \(search)"
-        let result: Result = try await get("/search/issues", page: page, count: 30, query: [URLQueryItem(name: "q", value: query), URLQueryItem(name: "sort", value: "updated"), URLQueryItem(name: "order", value: "desc")])
+        let result: Result = try await get("/search/issues", page: page, count: 30, query: [URLQueryItem(name: "q", value: query), URLQueryItem(name: "sort", value: "updated"), URLQueryItem(name: "order", value: "desc"), URLQueryItem(name: "advanced_search", value: "true")])
         // ponytail: GitHub search caps results at 1,000; narrow the search to find older conversations.
         return ConversationPage(items: result.items, more: result.items.count == 30 && page < 34, cursor: nil)
     }

@@ -20,7 +20,7 @@ struct ForgeApp: App {
                 .tint(.blue)
                 .task(id: scenePhase) {
                     #if DEBUG
-                    if ProcessInfo.processInfo.arguments.contains("--forge-preview-url") || ProcessInfo.processInfo.arguments.contains("--forge-preview-code") || ProcessInfo.processInfo.arguments.contains("--forge-preview-readme") || ProcessInfo.processInfo.arguments.contains("--forge-preview-conflict") || ProcessInfo.processInfo.arguments.contains("--forge-check-downloads") { return }
+                    if ProcessInfo.processInfo.arguments.contains(where: { $0.hasPrefix("--forge-preview-") }) || ProcessInfo.processInfo.arguments.contains("--forge-check-downloads") { return }
                     #endif
                     if scenePhase == .active { await store.refresh() }
                 }
@@ -36,6 +36,10 @@ struct ForgeApp: App {
                 downloadCheckStarted = true
                 await downloads.checkReleaseDownload()
             }
+        } else if ProcessInfo.processInfo.arguments.contains("--forge-preview-diff") {
+            NavigationStack { PullFilesView.preview(showFiles: ProcessInfo.processInfo.arguments.contains("--forge-show-files")) }
+        } else if ProcessInfo.processInfo.arguments.contains("--forge-preview-profile-readme") {
+            NavigationStack { List { ProfileReadmeView(login: "rdiol12") }.listStyle(.insetGrouped).navigationTitle("Profile README") }
         } else if ProcessInfo.processInfo.arguments.contains("--forge-preview-readme"),
            let document = try? ReadmeDocument(html: "<h1>README rendering check</h1><p>Image, table, code and links.</p><img alt='GitHub avatar' width='160' src='https://avatars.githubusercontent.com/octocat?s=256'><h2>Builds</h2><table><tr><th>Platform</th><th>Package</th></tr><tr><td>iOS</td><td>IPA</td></tr><tr><td>Android</td><td>APK</td></tr></table><pre><code>let message = &quot;Hello, Forge&quot;</code></pre><p><a href='https://github.com/octocat'>Open native profile</a></p>", repository: Repository("octocat/Hello-World"), sha: String(repeating: "a", count: 40), path: "README.md") {
             NavigationStack { List { Section { RichReadmeView(document: document, height: $previewHeight).frame(height: previewHeight) }.readmeSectionLayout() }.listStyle(.insetGrouped).navigationTitle("README check") }

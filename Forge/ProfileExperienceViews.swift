@@ -34,11 +34,11 @@ struct ProfileReadmeView: View {
     @State private var error: String?
     private var repository: Repository? { try? Repository("\(login)/\(login)") }
     var body: some View {
-        Section("Profile README") {
-            if let repository, let branch { ReadmeCard(repository: repository, branch: branch, canEdit: login.lowercased() == store.account.lowercased()) { Task { await load() } }.listRowInsets(EdgeInsets()) }
+        Section {
+            if let repository, let branch { ReadmeCard(repository: repository, branch: branch, canEdit: login.lowercased() == store.account.lowercased()) { Task { await load() } } }
             else if let error { Text(error).font(.footnote).foregroundStyle(.secondary) }
             else { ProgressView() }
-        }.task(id: store.account) { await load() }
+        }.readmeSectionLayout().task(id: "\(login):\(store.account)") { await load() }
     }
     private func load() async {
         guard let repository else { return }

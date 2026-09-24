@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 @MainActor
 struct CommentComposer: View {
@@ -114,11 +115,19 @@ struct PullDiffView: View {
     @Environment(ForgeStore.self) private var store
     @State private var selected: DiffLine?
     @State private var sent = false
+    @State private var highlighted: [AttributedString] = []
+    @State private var codeWidth: CGFloat = 0
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .caption) private var gutter = 38.0
     private var lines: [DiffLine] { DiffLine.parse(file.patch ?? "") }
     var body: some View {
         VStack(spacing: 0) {
+            Text(file.filename).font(.subheadline.monospaced().bold()).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).padding(.top)
             HStack { Text("+\(file.additions)").foregroundStyle(.green); Text("−\(file.deletions)").foregroundStyle(.red); Spacer(); if sent { Label("Comment sent", systemImage: "checkmark.circle").foregroundStyle(.green) } }.font(.caption).padding()
-            if let sha { Text("Commit \(sha.prefix(12)) · Tap + beside a line to comment").font(.caption).foregroundStyle(.secondary).padding(.horizontal) }
+            if let sha { Text("Commit \(sha.prefix(12)) · Old / new line numbers" + (store.hasToken ? " · Tap + to comment" : "")).font(.caption).foregroundStyle(.secondary).padding(.horizontal) }
+            Divider().padding(.top, 8)
+            GeometryReader { geometry in
             ScrollView([.horizontal, .vertical]) {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(lines) { line in
@@ -127,16 +136,22 @@ struct PullDiffView: View {
                                 Button { selected = line } label: { Image(systemName: "plus.bubble") }.frame(width: 24)
                                     .accessibilityLabel("Comment on \(line.side == .left ? "old" : "new") line \(line.commentLine ?? 0)")
                             } else { Color.clear.frame(width: 24, height: 16) }
-                            Text(line.oldLine.map(String.init) ?? "").frame(width: 38, alignment: .trailing).foregroundStyle(.secondary)
-                            Text(line.newLine.map(String.init) ?? "").frame(width: 38, alignment: .trailing).foregroundStyle(.secondary)
-                            Text(line.text).textSelection(.enabled).fixedSize().frame(maxWidth: .infinity, alignment: .leading)
+                            Text(line.oldLine.map(String.init) ?? "").frame(width: gutter, alignment: .trailing).foregroundStyle(.secondary).accessibilityLabel(line.oldLine.map { "Old line \($0)" } ?? "")
+                            Text(line.newLine.map(String.init) ?? "").frame(width: gutter, alignment: .trailing).foregroundStyle(.secondary).accessibilityLabel(line.newLine.map { "New line \($0)" } ?? "")
+                            Text(highlighted.indices.contains(line.id) ? highlighted[line.id] : AttributedString(line.text)).textSelection(.enabled).fixedSize().frame(maxWidth: .infinity, alignment: .leading)
                         }.font(.system(.caption, design: .monospaced)).padding(.vertical, 4).padding(.horizontal, 8)
                             .background(line.text.hasPrefix("+") ? Color.green.opacity(0.12) : line.text.hasPrefix("-") ? Color.red.opacity(0.12) : line.text.hasPrefix("@@") ? Color.blue.opacity(0.12) : Color.clear)
                     }
-                }
+                }.frame(width: max(geometry.size.width, codeWidth + gutter * 2 + 80), alignment: .leading)
             }
-            if file.patch == nil { ContentUnavailableView("No text diff", systemImage: "doc", description: Text("GitHub omitted this patch. Binary and some large changes have no text preview.")) }
-        }.navigationTitle(file.filename).navigationBarTitleDisplayMode(.inline)
+            }
+            if file.patch?.isEmpty != false { ContentUnavailableView("No text diff", systemImage: "doc", description: Text("GitHub omitted this patch. Binary and some large changes have no text preview.")) }
+        }.background(Color(uiColor: .systemBackground))
+        .task(id: file.filename + (file.patch ?? "") + String(describing: scheme) + String(describing: typeSize)) {
+            highlighted = await highlightedCode(file.patch ?? "", filename: file.filename)
+            let font = UIFont.monospacedSystemFont(ofSize: UIFont.preferredFont(forTextStyle: .caption1).pointSize, weight: .regular)
+            codeWidth = lines.reduce(0) { max($0, ($1.text as NSString).size(withAttributes: [.font: font]).width) }.rounded(.up)
+        }
         .sheet(item: $selected) { line in
             if let sha, let position = line.commentLine {
                 CommentComposer(title: "Line comment", context: "\(file.filename):\(position)\n\(line.text)") { body in

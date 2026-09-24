@@ -29,25 +29,22 @@ struct ConversationListView: View {
                         Text("Open").tag("open"); Text("Closed").tag("closed"); Text("All").tag("all")
                     }.pickerStyle(.segmented).listRowBackground(Color.clear)
                 }
-                Section {
-                    ForEach(items) { item in
-                        if let repo = item.repository {
-                            NavigationLink { ConversationDetailView(repository: repo, number: item.number, kind: kind) } label: {
-                                HStack(alignment: .top, spacing: 12) {
-                                    Octicon(kind.icon).foregroundStyle(item.status == "Open" ? Color.green : Color.purple)
-                                    VStack(alignment: .leading, spacing: 6) {
-                                        Text("\(repo.fullName) #\(String(item.number))").font(.caption).foregroundStyle(.secondary)
-                                        Text(item.title).font(.body.weight(.semibold)).foregroundStyle(.primary)
-                                        HStack {
-                                            Text(item.user?.login ?? "Deleted user")
-                                            Spacer()
-                                            if let date = item.updatedAt { Text(date, style: .relative) }
-                                        }.font(.caption).foregroundStyle(.secondary)
-                                    }
-                                }.padding(.vertical, 5)
-                            }
+                if kind == .pullRequest && repository == nil {
+                    let groups = Dictionary(grouping: items, by: { $0.repository?.fullName ?? "Unknown repository" })
+                    ForEach(groups.keys.sorted(), id: \.self) { name in
+                        Section {
+                            ForEach(groups[name] ?? []) { conversationRow($0) }
+                        } header: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(name).font(.headline)
+                                Text("Owner: \(name.split(separator: "/").first.map(String.init) ?? name)").font(.caption)
+                            }.textCase(nil)
                         }
                     }
+                } else {
+                    Section { ForEach(items) { conversationRow($0) } } header: { Text(repository?.fullName ?? "Your conversations").textCase(nil) }
+                }
+                Section {
                     if busy { ProgressView("Loading \(kind.title.lowercased())...") }
                     if let error {
                         ErrorNotice(message: error)
@@ -55,8 +52,7 @@ struct ConversationListView: View {
                     }
                     if items.isEmpty && !busy && error == nil { ContentUnavailableView("No matching \(kind.title.lowercased())", systemImage: "text.bubble") }
                     if more && !busy { Button("Load more") { Task { await load(reset: false) } } }
-                } header: { Text(repository?.fullName ?? "Your conversations").textCase(nil) }
-                  footer: { Text("Search uses GitHub's search syntax. Narrow the query to find older results beyond GitHub's 1,000-result search limit.") }
+                } footer: { Text("Search uses GitHub's search syntax. Narrow the query to find older results beyond GitHub's 1,000-result search limit.") }
             }
         }
         .navigationTitle(kind.title)
@@ -68,6 +64,25 @@ struct ConversationListView: View {
         .sheet(isPresented: $compose) { IssueComposer(repository: repository) { created = $0; showCreated = true } }
         .navigationDestination(isPresented: $showCreated) {
             if let created, let repo = created.repository { ConversationDetailView(repository: repo, number: created.number, kind: .issue) }
+        }
+    }
+
+    @ViewBuilder private func conversationRow(_ item: Conversation) -> some View {
+        if let repo = item.repository {
+            NavigationLink { ConversationDetailView(repository: repo, number: item.number, kind: kind) } label: {
+                HStack(alignment: .top, spacing: 12) {
+                    Octicon(kind.icon).foregroundStyle(item.status == "Open" ? Color.green : Color.purple)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("\(repo.fullName) #\(item.number)").font(.caption).foregroundStyle(.secondary)
+                        Text(item.title).font(.body.weight(.semibold)).foregroundStyle(.primary)
+                        HStack {
+                            Text("Opened by \(item.user?.login ?? "Deleted user")")
+                            Spacer()
+                            if let date = item.updatedAt { Text(date, style: .relative) }
+                        }.font(.caption).foregroundStyle(.secondary)
+                    }
+                }.padding(.vertical, 5)
+            }
         }
     }
 
@@ -304,7 +319,20 @@ private struct PullCommentsView: View {
 }
 
 @MainActor
-private struct PullFilesView: View {
+struct PullFilesView: View {
+    #if DEBUG
+    static func preview(showFiles: Bool) -> Self {
+        var view = Self(repository: try! Repository("forge/preview"), number: 3)
+        view._files = State(initialValue: [
+            PullFile(filename: "Sources/Greeting.swift", status: "modified", additions: 3, deletions: 1, patch: "@@ -10,4 +10,6 @@ struct Greeting\n struct Greeting {\n-    let message = \"Hello\"\n+    let message = \"Hello, Forge\"\n+    let enabled = true\n+    // Keep each change easy to review.\n     func show() { print(message) }\n }"),
+            PullFile(filename: "README.md", status: "modified", additions: 1, deletions: 1, patch: "@@ -1 +1 @@\n-# Project\n+# Forge")
+        ])
+        view._page = State(initialValue: 1)
+        view._sha = State(initialValue: String(repeating: "a", count: 40))
+        view._showsFiles = State(initialValue: showFiles)
+        return view
+    }
+    #endif
     @State private var filter = ""
     let repository: Repository
     let number: Int
@@ -315,26 +343,55 @@ private struct PullFilesView: View {
     @State private var busy = false
     @State private var error: String?
     @State private var sha: String?
+    @State private var selectedPath: String?
+    @State private var showsFiles = true
     var body: some View {
-        List {
-            ForEach(files.filter { filter.isEmpty || $0.filename.localizedCaseInsensitiveContains(filter) }) { file in
-                NavigationLink {
-                    PullDiffView(repository: repository, number: number, file: file, sha: sha)
-                } label: {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(file.filename).font(.subheadline.monospaced())
-                        HStack { Text(file.status.capitalized).foregroundStyle(.secondary); Text("+\(file.additions)").foregroundStyle(.green); Text("−\(file.deletions)").foregroundStyle(.red) }.font(.caption)
+        GeometryReader { geometry in
+            let wide = geometry.size.width >= 700
+            HStack(spacing: 0) {
+                if wide && showsFiles { fileList(compact: false).frame(width: 280); Divider() }
+                if let file = files.first(where: { $0.filename == selectedPath }) ?? files.first {
+                    PullDiffView(repository: repository, number: number, file: file, sha: sha).id("\(sha ?? ""):\(file.filename)")
+                } else {
+                    ContentUnavailableView("Select a changed file", systemImage: "doc.text.magnifyingglass").frame(maxWidth: .infinity)
+                }
+            }.overlay(alignment: .leading) {
+                if !wide && showsFiles {
+                    ZStack(alignment: .leading) {
+                        Color.black.opacity(0.25).onTapGesture { showsFiles = false }.accessibilityLabel("Close file list")
+                        fileList(compact: true).frame(width: min(300, geometry.size.width * 0.85)).background(Color(uiColor: .systemBackground)).shadow(radius: 8)
                     }
                 }
             }
+        }.navigationTitle("Files changed").navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) { Button { showsFiles.toggle() } label: { Label("Changed files", systemImage: "sidebar.left") } }
+            ToolbarItem(placement: .topBarTrailing) { Button { Task { await refresh() } } label: { Label("Refresh files", systemImage: "arrow.clockwise") }.disabled(busy) }
+        }
+        .task { if page == 0 { await load() } }
+    }
+    private func fileList(compact: Bool) -> some View {
+        List {
+            TextField("Filter files by name or path", text: $filter).textInputAutocapitalization(.never).autocorrectionDisabled()
+            Text("\(files.count) changed files").font(.caption).foregroundStyle(.secondary)
+            ForEach(files.filter { filter.isEmpty || $0.filename.localizedCaseInsensitiveContains(filter) }.sorted { $0.filename < $1.filename }) { file in
+                Button { selectedPath = file.filename; if compact { showsFiles = false } } label: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(file.filename).font(.subheadline.monospaced()).foregroundStyle(.primary).multilineTextAlignment(.leading)
+                        HStack { Text(file.status.capitalized).foregroundStyle(.secondary); Text("+\(file.additions)").foregroundStyle(.green); Text("−\(file.deletions)").foregroundStyle(.red) }.font(.caption)
+                    }
+                }.listRowBackground((selectedPath ?? files.first?.filename) == file.filename ? Color.accentColor.opacity(0.12) : Color.clear)
+            }
+            if !filter.isEmpty && !files.contains(where: { $0.filename.localizedCaseInsensitiveContains(filter) }) { Text("No matching loaded files.").foregroundStyle(.secondary) }
             if busy { ProgressView("Loading changed files...") }
             if let error { ErrorNotice(message: error); Button("Retry") { Task { await load() } } }
             if more && !busy { Button("Load more files") { Task { await load() } } }
             if files.count >= 3000 { Text("GitHub returns at most 3,000 changed files per pull request.").font(.footnote).foregroundStyle(.secondary) }
-        }.navigationTitle("Files changed").navigationBarTitleDisplayMode(.inline)
-        .searchable(text: $filter, prompt: "Filter loaded files by name or path")
-        .task { if page == 0 { await load() } }
-        .refreshable { await store.client.clearCache(); if !busy { files = []; page = 0; sha = nil; await load() } }
+        }.listStyle(.plain).refreshable { await refresh() }
+    }
+    private func refresh() async {
+        guard !busy else { return }
+        await store.client.clearCache(); files = []; page = 0; sha = nil; await load()
     }
     private func load() async {
         guard !busy else { return }; busy = true; error = nil

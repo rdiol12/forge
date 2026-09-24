@@ -19,6 +19,58 @@ import org.junit.runner.RunWith
 class NavigationTest {
     @get:Rule val compose = createComposeRule()
 
+    @Test fun homePullRequestsShowContributionsToOwnedRepositories() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val vault = Vault(context); val original = vault.read("session")
+        val state = try {
+            vault.save("session", json("token" to "search-test-only", "account" to "owner").toString())
+            ForgeState(context.applicationContext as Application)
+        } finally { vault.save("session", original) }
+        val cache = requireNotNull(state.api.cache)
+        fun seed(scope: String, advanced: Boolean, body: String) {
+            val parameters = mapOf("q" to "is:pr $scope is:open ", "sort" to "updated", "order" to "desc", "per_page" to "30", "page" to "1") + if (advanced) mapOf("advanced_search" to "true") else emptyMap()
+            cache.store("${state.api.token}\n${apiUrl("/search/issues", parameters)}\nGET\n", body.toByteArray(), null, cache.epoch)
+        }
+        seed("involves:owner", false, "{\"items\":[]}")
+        seed("(user:owner OR involves:owner)", true, """{"items":[{"number":9,"title":"My contribution","repository_url":"https://api.github.com/repos/zed/library","user":{"login":"owner"},"state":"open"},{"number":3,"title":"Add platform support","repository_url":"https://api.github.com/repos/owner/project","user":{"login":"contributor"},"state":"open"}]}""")
+        state.open(Page("conversations", "Pull Requests", arg = "pull"))
+        compose.setContent { ForgeTheme { ForgeApp(state) } }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Add platform support").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Add platform support").assertIsDisplayed()
+        compose.onNodeWithText("owner/project #3", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Opened by contributor", substring = true).assertIsDisplayed()
+        val owned = compose.onNodeWithText("owner/project\nOwner: owner").fetchSemanticsNode().boundsInRoot.top
+        val external = compose.onNodeWithText("zed/library\nOwner: zed").fetchSemanticsNode().boundsInRoot.top
+        assertTrue("Group by repository even when GitHub returns a different updated order", owned < external)
+    }
+
+    @Test fun changedFilesPanelSelectsDiffAndPreservesOldAndNewLines() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val state = ForgeState(context.applicationContext as Application)
+        val cache = requireNotNull(state.api.cache); val sha = "a".repeat(40)
+        val path = "/repos/owner/project/pulls/3"
+        fun seed(endpoint: String, parameters: Map<String, String> = emptyMap(), body: String) {
+            cache.store("${state.api.token}\n${apiUrl(endpoint, parameters)}\nGET\n", body.toByteArray(), null, cache.epoch)
+        }
+        seed(path, body = json("head" to json("sha" to sha)).toString())
+        seed("$path/files", mapOf("per_page" to "30", "page" to "1"), JSONArray(listOf(
+            json("filename" to "src/First.kt", "status" to "modified", "additions" to 1, "deletions" to 1, "patch" to "@@ -10 +10 @@\n-val old = 1\n+val first = 2"),
+            json("filename" to "src/Second.kt", "status" to "modified", "additions" to 1, "deletions" to 1, "patch" to "@@ -20 +21 @@\n-val before = 1\n+val after = 2")
+        )).toString())
+        state.open(Page("diffs", "Changed files", "owner/project", "3", sha = sha))
+        compose.setContent { ForgeTheme { ForgeApp(state) } }
+        compose.waitUntil(5_000) { compose.onAllNodesWithContentDescription("Show diff for src/Second.kt").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithContentDescription("Show diff for src/Second.kt").performClick()
+        compose.onNodeWithText("-val before = 1").assertIsDisplayed()
+        compose.onNodeWithText("+val after = 2").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Old line 20").assertIsDisplayed()
+        compose.onNodeWithContentDescription("New line 21").assertIsDisplayed()
+        compose.onNodeWithText("Files", substring = false).performClick()
+        compose.onNodeWithContentDescription("Show diff for src/First.kt").performClick()
+        compose.onNodeWithText("+val first = 2").assertIsDisplayed()
+        compose.onNodeWithText("+val after = 2").assertDoesNotExist()
+    }
+
     @Test fun conflictEditorRequiresAnExplicitChoiceAndKeepsEditedText() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val state = ForgeState(context.applicationContext as Application)

@@ -269,6 +269,30 @@ final class ForgeCoreTests: XCTestCase {
         do { _ = try await client.codeText(in: Repository("owner/repo"), file: large); XCTFail("Large preview must fail") } catch {}
     }
 
+    func testHomePullRequestsIncludeContributionsToOwnedRepositories() async throws {
+        StubURLProtocol.handler = { request in
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!
+            XCTAssertEqual(request.url?.path, "/search/issues")
+            let scope = query.first { $0.name == "q" }?.value ?? ""
+            XCTAssertTrue(scope.contains("involves:owner"), "Keep conversations in other people's repositories")
+            guard scope.contains("is:pr (user:owner OR involves:owner) is:open"),
+                  query.contains(URLQueryItem(name: "advanced_search", value: "true")) else {
+                return (200, "{\"items\":[]}")
+            }
+            return (200, """
+            {"items":[{"number":3,"title":"Add platform support","html_url":"https://github.com/owner/project/pull/3","user":{"login":"contributor"},"state":"open"}]}
+            """)
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let result = try await GitHubClient(token: "test-only", session: session).conversations(kind: .pullRequest, repository: nil, account: "owner", search: "", state: "open", page: 1, cursor: nil)
+        XCTAssertEqual(result.items.map(\.number), [3])
+        XCTAssertEqual(result.items.first?.repository, try Repository("owner/project"))
+        XCTAssertEqual(result.items.first?.user?.login, "contributor")
+    }
+
     func testNativeIssueSearchPagesWithoutMixingPullRequests() async throws {
         StubURLProtocol.handler = { request in
             XCTAssertEqual(request.url?.path, "/search/issues")

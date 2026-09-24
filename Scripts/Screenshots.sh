@@ -88,3 +88,20 @@ xcrun simctl io "$device" screenshot dist/screenshots/readme-light.png
 xcrun simctl ui "$device" appearance dark
 sleep 2
 xcrun simctl io "$device" screenshot dist/screenshots/readme-dark.png
+xcrun simctl terminate "$device" app.forge.github
+xcrun simctl ui "$device" appearance light
+xcrun simctl launch "$device" app.forge.github --forge-preview-profile-readme
+sleep 8
+xcrun simctl io "$device" screenshot dist/screenshots/profile-readme.png
+xcrun simctl terminate "$device" app.forge.github
+xcrun simctl launch "$device" app.forge.github --forge-preview-diff
+sleep 3
+xcrun simctl io "$device" screenshot dist/screenshots/pr-diff-light.png
+xcrun simctl ui "$device" appearance dark
+sleep 2
+xcrun simctl io "$device" screenshot dist/screenshots/pr-diff-dark.png
+xcrun simctl terminate "$device" app.forge.github
+xcrun simctl ui "$device" appearance light
+xcrun simctl launch "$device" app.forge.github --forge-preview-diff --forge-show-files
+sleep 3
+xcrun simctl io "$device" screenshot dist/screenshots/pr-files-panel.png

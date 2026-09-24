@@ -300,7 +300,9 @@ jobs:
           - **iOS 17+:** download Forge-unsigned.ipa and sign it with your sideloading tool before installing. No Apple certificate or provisioning profile is included.
           - **Android 8.0+:** download and install Forge-android.apk. It uses Forge's persistent signing key so future builds can update the same app.
 
-          Fixed commit removal falsely rejecting separate edits to the same README. Removal, undo and reapply merge separate text edits and offer an in-app file conflict editor when review is needed. Resolutions are tied to exact file revisions, and the final branch update still requires the original expected head. Root/merge rewrites and file/directory collisions still need desktop Git.
+          New in 0.9.2: Home includes pull requests and issues submitted by others to repositories you own, alongside conversations you participate in. Pull requests are grouped by repository, with repository owners and PR authors labeled. PRs have a left-hand changed-files panel, searchable paths, old/new line numbers, syntax colors and red/green diff backgrounds. The file panel collapses on phones and stays beside the diff on wider screens. Profile READMEs now use the same full-width layout and image rendering as repository READMEs.
+
+          Commit removal merges separate text edits and offers an in-app file conflict editor when review is needed. Resolutions are tied to exact file revisions, and the final branch update still requires the original expected head. Root/merge rewrites and file/directory collisions still need desktop Git.
 
           New in 0.9: deployment approvals/rejections from Actions runs; draft/ready PR controls; changed-file filtering; copy file paths; README and Markdown contents navigation; saved code/document snapshots for offline reading; in-app Wiki access; and list position, filters and loaded-page restoration. Repository headers, shortcuts, branches and README headings align left, with a larger avatar. Failed downloads have a visible Remove control.
 

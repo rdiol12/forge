@@ -2,14 +2,23 @@ package app.forge.github
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 private const val DISCUSSION = "node_id:id number title body user:author{login} created_at:createdAt updated_at:updatedAt closed isAnswered category{name} repository{nameWithOwner}"
@@ -38,14 +47,17 @@ private const val COMMENT = "node_id:id body user:author{login} created_at:creat
         if (kind != "discussion") Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf("open", "closed", "all").forEach { value -> FilterChip(status == value, { status = value }, { Text(value.replaceFirstChar { it.uppercase() }) }) } }
         if (kind == "issue" && page.repo.isNotEmpty() && state.connected) OutlinedButton(onClick = { state.open(Page("newIssue", "Create new issue", page.repo)) }) { Text("New issue") }
         Group {
-            val scope = if (page.repo.isNotBlank()) "repo:${page.repo}" else "involves:${state.account}"
+            val scope = if (page.repo.isNotBlank()) "repo:${page.repo}" else if (kind == "discussion") "involves:${state.account}" else "(user:${state.account} OR involves:${state.account})"
             if (page.repo.isBlank() && !state.connected) Note("Connect GitHub in Settings to see your conversations.")
             else if (kind == "discussion") GraphPages(query, load = { cursor ->
                 state.api.gql("query(\$q:String!,\$cursor:String){search(query:\$q,type:DISCUSSION,first:30,after:\$cursor){nodes{... on Discussion{$DISCUSSION}}pageInfo{hasNextPage endCursor}}}", json("q" to "$scope $query sort:updated", "cursor" to cursor)).o("search")
             }) { ConversationRow(page.repo, kind, it) }
-            else Paged(query to status, load = { number ->
+            else Paged(query to status,
+                order = if (kind == "pull" && page.repo.isBlank()) compareBy { it.s("repository_url") } else null,
+                group = if (kind == "pull" && page.repo.isBlank()) { item -> val name = item.s("repository_url").removePrefix("https://api.github.com/repos/"); "$name\nOwner: ${name.substringBefore('/')}" } else null,
+                load = { number ->
                 require(number <= 34) { "GitHub search caps results at 1,000. Narrow your search." }
-                state.api.obj("/search/issues", mapOf("q" to "is:${if (kind == "pull") "pr" else "issue"} $scope ${if (status == "all") "" else "is:$status"} $query", "sort" to "updated", "order" to "desc", "per_page" to "30", "page" to number.toString())).rows("items")
+                state.api.obj("/search/issues", mapOf("q" to "is:${if (kind == "pull") "pr" else "issue"} $scope ${if (status == "all") "" else "is:$status"} $query", "sort" to "updated", "order" to "desc", "per_page" to "30", "page" to number.toString(), "advanced_search" to "true")).rows("items")
             }) { ConversationRow(page.repo, kind, it) }
         }
     }
@@ -55,7 +67,7 @@ private const val COMMENT = "node_id:id body user:author{login} created_at:creat
 @Composable fun ConversationRow(repo: String, kind: String, item: JSONObject) {
     val state = LocalForge.current
     val fullName = repo.ifBlank { item.o("repository").s("nameWithOwner").ifBlank { item.s("repository_url").substringAfter("https://api.github.com/repos/") } }
-    RowLink(item.s("title"), "$fullName #${item.optLong("number")} · ${item.o("user").s("login")} · ${item.s("state").ifBlank { if (item.optBoolean("closed")) "closed" else "open" }}", when (kind) { "issue" -> R.drawable.ic_issue_opened; "pull" -> R.drawable.ic_git_pull_request; else -> R.drawable.ic_comment_discussion }, if (item.s("state") == "closed" || item.optBoolean("closed")) Color(0xFF8250DF) else Color(0xFF1A7F37)) {
+    RowLink(item.s("title"), "$fullName #${item.optLong("number")} · Opened by ${item.o("user").s("login").ifBlank { "Deleted user" }} · ${item.s("state").ifBlank { if (item.optBoolean("closed")) "closed" else "open" }}", when (kind) { "issue" -> R.drawable.ic_issue_opened; "pull" -> R.drawable.ic_git_pull_request; else -> R.drawable.ic_comment_discussion }, if (item.s("state") == "closed" || item.optBoolean("closed")) Color(0xFF8250DF) else Color(0xFF1A7F37)) {
         state.open(Page(kind, "#${item.optLong("number")}", repository(fullName), positiveID(item.s("number"))))
     }
 }
@@ -174,32 +186,91 @@ suspend fun discussionReply(api: GitHub, discussion: String, parent: String?, bo
 
 @Composable fun PullFiles(page: Page) {
     var filter by rememberSaveable { mutableStateOf("") }
-    val state = LocalForge.current; var lineComment by rememberSaveable { mutableStateOf<String?>(null) }; var revision by remember { mutableStateOf(page.sha) }
-    Screen {
-        Note("Tap + beside a line to add an inline review comment. Diff comments are pinned to the displayed commit.")
-        OutlinedTextField(filter, { filter = it }, label = { Text("Filter loaded files by name or path") }, modifier = Modifier.fillMaxWidth())
-        Group { Paged(page, visible = { it.s("filename").contains(filter, true) }, load = { number ->
-            val path = "/repos/${repository(page.repo)}/pulls/${positiveID(page.id)}"
-            val before = state.api.obj(path).o("head").s("sha")
-            require(validSha(before) && (number == 1 || before == revision)) { "Pull request changed. Refresh to reload its diff." }
-            val files = state.api.list("$path/files", number)
-            require(state.api.obj(path).o("head").s("sha") == before) { "Pull request changed while loading. Refresh to reload." }; revision = before; files
-        }) { file ->
-            Text(file.s("filename"), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(12.dp))
-            Text("+${file.optInt("additions")} −${file.optInt("deletions")} · ${file.s("status")}", modifier = Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall)
-            if (file.s("patch").isBlank()) Note("GitHub omitted this binary or large diff.")
-            else Column(Modifier.horizontalScroll(rememberScrollState())) { diffLines(file.s("patch")).forEach { line ->
-                Row(Modifier.background(when { line.text.startsWith('+') -> Color(0x222DA44E); line.text.startsWith('-') -> Color(0x22CF222E); else -> Color.Transparent }).padding(horizontal = 6.dp)) {
-                    if (state.connected && line.side != null) TextButton(onClick = { lineComment = json("path" to file.s("filename"), "line" to line.number, "side" to line.side, "sha" to revision).toString() }, contentPadding = PaddingValues(4.dp), modifier = Modifier.width(40.dp).height(34.dp)) { Text("+") } else Spacer(Modifier.width(40.dp))
-                    Text("${line.old ?: ""}".padStart(4) + " " + "${line.new ?: ""}".padStart(4) + "  " + line.text, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
+    val state = LocalForge.current; val scope = rememberCoroutineScope()
+    val selectionKey = "${state.navigationKey}|pullFile"
+    val saved = state.screenValues[selectionKey] as? Pair<*, *>
+    var revision by remember(page, state.refresh, state.generation) { mutableStateOf(saved?.first as? String ?: page.sha) }
+    var selected by remember(page, state.refresh, state.generation) { mutableStateOf(saved?.second as? JSONObject) }
+    var lineComment by rememberSaveable { mutableStateOf<String?>(null) }
+    val drawer = rememberDrawerState(DrawerValue.Open)
+    fun select(file: JSONObject) { selected = file; state.screenValues[selectionKey] = revision to file }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val wide = maxWidth >= 700.dp
+        val files: @Composable () -> Unit = {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                Text("Changed files", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp))
+                OutlinedTextField(filter, { filter = it }, label = { Text("Filter files by name or path") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp))
+                Paged(page, order = compareBy { it.s("filename") }, visible = { it.s("filename").contains(filter, true) }, load = { number ->
+                    require(number <= 100) { "GitHub returns at most 3,000 changed files per pull request." }
+                    val path = "/repos/${repository(page.repo)}/pulls/${positiveID(page.id)}"
+                    val before = state.api.obj(path).o("head").s("sha")
+                    require(validSha(before) && (number == 1 || before == revision)) { "Pull request changed. Refresh to reload its diff." }
+                    val result = state.api.list("$path/files", number)
+                    require(state.api.obj(path).o("head").s("sha") == before) { "Pull request changed while loading. Refresh to reload." }
+                    revision = before
+                    if (selected == null) result.firstOrNull()?.let(::select)
+                    result
+                }) { file ->
+                    Column(Modifier.fillMaxWidth().background(if (file.s("filename") == selected?.s("filename")) MaterialTheme.colorScheme.primaryContainer else Color.Transparent).semanticsLabel("Show diff for ${file.s("filename")}").clickable { select(file); if (!wide) scope.launch { drawer.close() } }.padding(16.dp)) {
+                        Text(file.s("filename"), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("+${file.optInt("additions")}", color = Color(0xFF1A7F37))
+                            Text("−${file.optInt("deletions")}", color = MaterialTheme.colorScheme.error)
+                            Text(file.s("status"), style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
                 }
-            } }
-        } }
+            }
+        }
+        val content: @Composable () -> Unit = {
+            Column(Modifier.fillMaxSize()) {
+                if (!wide) TextButton(onClick = { scope.launch { drawer.open() } }) { Text("Files") }
+                selected?.let { file -> key(file.s("filename"), revision) { PullFileDiff(file, revision) { line ->
+                    lineComment = json("path" to file.s("filename"), "line" to line.number, "side" to line.side, "sha" to revision).toString()
+                } } } ?: Note("Select a changed file.")
+            }
+        }
+        if (wide) PermanentNavigationDrawer(drawerContent = { PermanentDrawerSheet(Modifier.width(280.dp)) { files() } }, content = content)
+        else ModalNavigationDrawer(drawerState = drawer, drawerContent = { ModalDrawerSheet(Modifier.width(300.dp)) { files() } }, content = content)
     }
     lineComment?.let { saved -> val line = JSONObject(saved); EditDialog("Comment on line ${line.getInt("line")}", listOf(Field("Comment", multiline = true)), "${line.s("path")} · ${line.s("side")}\nCommit ${line.s("sha").take(12)}", "Post comment", dismiss = { lineComment = null }) { values ->
         require(values[0].isNotBlank() && validSha(line.s("sha")) && safePath(line.s("path")))
         state.api.change("/repos/${page.repo}/pulls/${page.id}/comments", body = json("body" to values[0], "commit_id" to line.s("sha"), "path" to line.s("path"), "line" to line.getInt("line"), "side" to line.s("side")))
     } }
+}
+
+@Composable private fun PullFileDiff(file: JSONObject, revision: String, comment: (DiffLine) -> Unit) {
+    val state = LocalForge.current; val patch = file.s("patch"); val dark = isSystemInDarkTheme()
+    val lines = remember(patch) { diffLines(patch) }; var colors by remember(patch, dark) { mutableStateOf(emptyList<AnnotatedString>()) }
+    var wrap by rememberSaveable { mutableStateOf(false) }; val fontScale = LocalDensity.current.fontScale
+    LaunchedEffect(patch, dark) { colors = withContext(Dispatchers.Default) { highlight(patch, dark) } }
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
+        Text(file.s("filename"), style = MaterialTheme.typography.titleSmall, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(horizontal = 12.dp))
+        Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("+${file.optInt("additions")}", color = Color(0xFF1A7F37)); Text("−${file.optInt("deletions")}", color = MaterialTheme.colorScheme.error)
+            FilterChip(wrap, { wrap = !wrap }, { Text("Wrap") })
+        }
+        Note("Commit ${revision.take(12)} · Old / new line numbers${if (state.connected) " · Tap + to comment" else ""}")
+        HorizontalDivider()
+        if (patch.isBlank()) Note("GitHub omitted this binary or large diff.")
+        else BoxWithConstraints(Modifier.weight(1f)) {
+            val gutter = (36 * fontScale).dp
+            // ponytail: match the code reader's 20,000dp canvas; Wrap exposes unusually long generated lines.
+            val width = if (wrap) maxWidth else maxOf(maxWidth, minOf(20_000.dp, ((lines.maxOfOrNull { it.text.length } ?: 1) * 8.5f * fontScale + 72 * fontScale + 64).dp))
+            Box(if (wrap) Modifier else Modifier.horizontalScroll(rememberScrollState())) {
+                LazyColumn(Modifier.width(width).fillMaxHeight()) {
+                    itemsIndexed(lines) { index, line ->
+                        Row(Modifier.fillMaxWidth().background(when { line.text.startsWith('+') -> Color(0x222DA44E); line.text.startsWith('-') -> Color(0x22CF222E); line.text.startsWith("@@") -> Color(0x220969DA); else -> Color.Transparent }).padding(horizontal = 6.dp), verticalAlignment = androidx.compose.ui.Alignment.Top) {
+                            if (state.connected && line.side != null) TextButton(onClick = { comment(line) }, contentPadding = PaddingValues(0.dp), modifier = Modifier.width(32.dp).height(32.dp).semanticsLabel("Comment on ${if (line.side == "LEFT") "old" else "new"} line ${line.number}")) { Text("+") } else Spacer(Modifier.width(32.dp))
+                            Text(line.old?.toString() ?: "", fontFamily = FontFamily.Monospace, fontSize = 13.sp, modifier = Modifier.width(gutter).padding(top = 7.dp).semanticsLabel(line.old?.let { "Old line $it" } ?: ""), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(line.new?.toString() ?: "", fontFamily = FontFamily.Monospace, fontSize = 13.sp, modifier = Modifier.width(gutter).padding(top = 7.dp).semanticsLabel(line.new?.let { "New line $it" } ?: ""), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            SelectionContainer(Modifier.weight(1f)) { Text(colors.getOrNull(index) ?: AnnotatedString(line.text), fontFamily = FontFamily.Monospace, fontSize = 13.sp, softWrap = wrap, modifier = Modifier.padding(vertical = 7.dp)) }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable fun ReviewThreads(page: Page) {

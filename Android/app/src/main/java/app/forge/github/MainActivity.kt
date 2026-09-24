@@ -128,7 +128,7 @@ fun Modifier.semanticsLabel(label: String) = this.then(Modifier.semantics { cont
     value?.let { content(it) }
 }
 
-@Composable fun Paged(id: Any = Unit, order: Comparator<JSONObject>? = null, visible: (JSONObject) -> Boolean = { true }, load: suspend (Int) -> List<JSONObject>, row: @Composable (JSONObject) -> Unit) {
+@Composable fun Paged(id: Any = Unit, order: Comparator<JSONObject>? = null, visible: (JSONObject) -> Boolean = { true }, group: ((JSONObject) -> String)? = null, load: suspend (Int) -> List<JSONObject>, row: @Composable (JSONObject) -> Unit) {
     val state = LocalForge.current; val scope = rememberCoroutineScope()
     val cacheKey = "${state.navigationKey}|paged:$id"
     val saved = state.listPages[cacheKey]
@@ -146,7 +146,12 @@ fun Modifier.semanticsLabel(label: String) = this.then(Modifier.semantics { cont
     }
     LaunchedEffect(id, state.refresh, state.generation) { if (!state.listPages.containsKey(cacheKey)) fetch(true) }
     Column {
-        rows.filter(visible).forEach { row(it); HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f)) }
+        val displayed = rows.filter(visible)
+        displayed.forEachIndexed { index, item ->
+            val heading = group?.invoke(item)
+            if (heading != null && (index == 0 || heading != group?.invoke(displayed[index - 1]))) Text(heading, style = MaterialTheme.typography.titleSmall, modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainer).padding(16.dp))
+            row(item); HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f))
+        }
         if (!busy && rows.isNotEmpty() && rows.none(visible)) Note("No matches in the loaded results.")
         if (busy) Loading()
         if (!busy && rows.isEmpty() && error == null) Note("Nothing here yet.")

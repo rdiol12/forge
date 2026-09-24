@@ -69,18 +69,11 @@ struct CodeTextView: View {
         }.background(Color(uiColor: .systemBackground))
         .task(id: text + filename + String(describing: scheme) + String(describing: typeSize)) {
             let source = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
-            let tokens = await Task.detached(priority: .userInitiated) { CodeSyntax.tokens(in: source, filename: filename) }.value
+            let rendered = await highlightedCode(source, filename: filename)
             guard !Task.isCancelled else { return }
-            let result = NSMutableAttributedString(string: source)
-            for token in tokens { result.addAttribute(.foregroundColor, value: token.kind.color, range: token.range) }
             let font = UIFont.monospacedSystemFont(ofSize: UIFont.preferredFont(forTextStyle: .footnote).pointSize, weight: .regular)
             codeWidth = source.components(separatedBy: "\n").reduce(0) { max($0, ($1 as NSString).size(withAttributes: [.font: font]).width) }.rounded(.up)
-            var offset = 0
-            lines = source.components(separatedBy: "\n").map { line in
-                let range = NSRange(location: offset, length: (line as NSString).length)
-                offset += range.length + 1
-                return AttributedString(result.attributedSubstring(from: range))
-            }
+            lines = rendered
         }
     }
 
@@ -88,6 +81,20 @@ struct CodeTextView: View {
         guard !matches.isEmpty else { return }
         matchIndex = (matchIndex + direction + matches.count) % matches.count
         proxy.scrollTo(matches[matchIndex], anchor: .center)
+    }
+}
+
+@MainActor
+func highlightedCode(_ source: String, filename: String) async -> [AttributedString] {
+    let tokens = await Task.detached(priority: .userInitiated) { CodeSyntax.tokens(in: source, filename: filename) }.value
+    guard !Task.isCancelled else { return [] }
+    let result = NSMutableAttributedString(string: source)
+    for token in tokens { result.addAttribute(.foregroundColor, value: token.kind.color, range: token.range) }
+    var offset = 0
+    return source.components(separatedBy: "\n").map { line in
+        let range = NSRange(location: offset, length: (line as NSString).length)
+        offset += range.length + 1
+        return AttributedString(result.attributedSubstring(from: range))
     }
 }
 
