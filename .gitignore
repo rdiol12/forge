@@ -15,3 +15,6 @@ dist/
 build-simulator/
 
 .env.local
+
+# Keep Markdown documentation local.
+*.[mM][dD]

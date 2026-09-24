@@ -134,7 +134,7 @@ struct SettingsView: View {
                         .textSelection(.enabled)
                     NavigationLink("Open-source licenses") {
                         ScrollView {
-                            Text((Bundle.main.url(forResource: "ThirdPartyNotices", withExtension: "md").flatMap { try? String(contentsOf: $0, encoding: .utf8) }) ?? "GitHub Octicons - MIT License")
+                            Text((Bundle.main.url(forResource: "ThirdPartyNotices", withExtension: "txt").flatMap { try? String(contentsOf: $0, encoding: .utf8) }) ?? "GitHub Octicons - MIT License")
                                 .font(.footnote).textSelection(.enabled).padding()
                         }.navigationTitle("Licenses").navigationBarTitleDisplayMode(.inline)
                     }

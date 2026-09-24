@@ -34,7 +34,7 @@ struct CheckNative {
             let branches = try await client.branches(in: repository, page: 1)
             guard let branch = branches.first(where: { $0.name == settings.defaultBranch }) else { throw GitHubError("Default branch not found.") }
             let files = try await client.files(in: repository, path: "", sha: branch.commit.sha)
-            guard let readme = files.first(where: { $0.name == "README.md" }) else { throw GitHubError("README not found.") }
+            guard let readme = files.first(where: { $0.name == "Package.swift" }) else { throw GitHubError("Package.swift not found.") }
             let code = try await client.codeText(in: repository, file: readme)
             let (raw, response) = try await client.session.data(for: client.downloadRequest(try .repositoryFile(readme, in: repository)))
             try GitHubClient.validate(response)
@@ -51,7 +51,7 @@ struct CheckNative {
                 let log = try await client.jobLog(in: repository, jobID: job.id)
                 precondition(!log.isEmpty)
             }
-            print("PASS: Native following list, branch files, identical immutable README download, repository ZIP, successful-build query and native job logs.")
+            print("PASS: Native following list, branch files, identical immutable source download, repository ZIP, successful-build query and native job logs.")
             print("PASS: Repository remains public; no writes were made.")
             return
         }

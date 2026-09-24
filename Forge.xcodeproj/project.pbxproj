@@ -65,7 +65,7 @@
         A1000000000000000000000D = {isa = PBXBuildFile; fileRef = A2000000000000000000000D; };
 
         A20000000000000000000010 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubViews.swift; sourceTree = "<group>"; };
-        A20000000000000000000011 = {isa = PBXFileReference; lastKnownFileType = text; path = ThirdPartyNotices.md; sourceTree = "<group>"; };
+        A20000000000000000000011 = {isa = PBXFileReference; lastKnownFileType = text; path = ThirdPartyNotices.txt; sourceTree = "<group>"; };
         A20000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgeApp.swift; sourceTree = "<group>"; };
         A20000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgeStore.swift; sourceTree = "<group>"; };
         A20000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadManager.swift; sourceTree = "<group>"; };

@@ -14,6 +14,20 @@ final class DownloadManager {
     private let foreground = URLSession(configuration: .ephemeral)
     private let directory: URL
     private let manifest: URL
+    #if DEBUG
+    private var downloadCheckTrace: [String] = []
+    #endif
+    fileprivate func record(_ phase: String, error: Error? = nil) {
+        #if DEBUG
+        var detail = phase
+        if let error {
+            let value = error as NSError
+            detail += " \(value.domain) \(value.code)"
+            if let underlying = value.userInfo[NSUnderlyingErrorKey] as? NSError { detail += " underlying \(underlying.domain) \(underlying.code)" }
+        }
+        downloadCheckTrace.append(detail)
+        #endif
+    }
     @ObservationIgnored private lazy var background: URLSession = {
         let config = URLSessionConfiguration.background(withIdentifier: DownloadManager.sessionID)
         config.isDiscretionary = false
@@ -86,7 +100,9 @@ final class DownloadManager {
                     let delegate = PreparationDelegate { [weak self] progress in Task { @MainActor in self?.progress(id, value: progress) } }
                     // GitHub's redirect can have no body. A download task then fails before returning its Location.
                     var headers = request; headers.httpMethod = "HEAD"
+                    record("Resolve headers")
                     let (_, response) = try await foreground.data(for: headers, delegate: delegate)
+                    record("Headers HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)")
                     try Task.checkCancellation()
                     if let http = response as? HTTPURLResponse, (300..<400).contains(http.statusCode),
                        let location = http.value(forHTTPHeaderField: "Location"), let url = URL(string: location, relativeTo: response.url)?.absoluteURL {
@@ -94,6 +110,7 @@ final class DownloadManager {
                         guard let safe = DownloadSpec.redirect(redirected) else { throw GitHubError("GitHub returned an unsupported download location.") }
                         if url.host?.lowercased() == "api.github.com" { request = safe; continue }
                         let download = background.downloadTask(with: try DownloadSpec.backgroundRequest(for: url))
+                        record("Background transfer")
                         download.taskDescription = id.uuidString
                         transfers[id] = download
                         if let index = entries.firstIndex(where: { $0.id == id }) { entries[index].message = nil; entries[index].progress = nil }
@@ -108,7 +125,7 @@ final class DownloadManager {
                     return
                 }
                 throw GitHubError("GitHub redirected this download too many times.")
-            } catch { fail(id, message: Task.isCancelled ? "Cancelled" : "\(error.localizedDescription) Tap Try again to reconnect.") }
+            } catch { record("Preparation failed", error: error); fail(id, message: Task.isCancelled ? "Cancelled" : "\(error.localizedDescription) Tap Try again to reconnect.") }
         }
     }
 
@@ -118,6 +135,7 @@ final class DownloadManager {
     }
 
     fileprivate func finish(_ id: UUID, temporary: URL, response: URLResponse?) {
+        record("Save HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)")
         guard let index = entries.firstIndex(where: { $0.id == id && $0.acceptsCompletion }) else { return }
         let folder = directory.appendingPathComponent(id.uuidString, isDirectory: true)
         do {
@@ -131,6 +149,7 @@ final class DownloadManager {
             entries[index].progress = 1; entries[index].active = false; entries[index].message = nil
             transfers[id] = nil; persist()
         } catch {
+            record("Save failed", error: error)
             try? FileManager.default.removeItem(at: folder)
             fail(id, message: "\(error.localizedDescription) Tap Try again to reconnect.")
         }
@@ -175,11 +194,11 @@ extension DownloadManager {
             guard let asset = try await client.assets(in: repository, releaseID: release.id, page: 1).first(where: { $0.name == "SHA256SUMS" }) else { throw GitHubError("Release checksums missing.") }
             guard let run = try await client.runs(in: repository, status: "success").first,
                   let artifact = try await client.artifacts(in: repository, runID: run.id, page: 1).first(where: { !$0.isExpired() && $0.name.hasPrefix("Forge-unsigned-") }) else { throw GitHubError("No workflow artifact to check.") }
-            let readme: RepositoryFile = try await client.get("/repos/\(repository.fullName)/contents/README.md")
+            let readme: RepositoryFile = try await client.get("/repos/\(repository.fullName)/contents/Sources/ForgeCore/Models.swift")
             let cases: [(DownloadSpec, (Data) -> Bool)] = [
                 (.asset(asset, in: repository), { String(decoding: $0, as: UTF8.self).contains("Forge-unsigned.ipa") }),
                 (try .artifact(artifact, in: repository), { $0.starts(with: [0x50, 0x4b, 0x03, 0x04]) }),
-                (try .repositoryFile(readme, in: repository), { String(decoding: $0, as: UTF8.self).contains("Forge") })
+                (try .repositoryFile(readme, in: repository), { String(decoding: $0, as: UTF8.self).contains("struct Repository") })
             ]
             for (specification, valid) in cases {
                 start(specification, client: client)
@@ -193,7 +212,7 @@ extension DownloadManager {
                 guard valid(try Data(contentsOf: file)) else { throw GitHubError("Unexpected contents in \(specification.name).") }
             }
             result = ["status": "passed", "check": "Release, Actions artifact and repository file saved through the iOS download manager"]
-        } catch { result = ["status": "failed", "error": error.localizedDescription] }
+        } catch { result = ["status": "failed", "error": error.localizedDescription, "trace": downloadCheckTrace.joined(separator: " | ")] }
         try? JSONEncoder().encode(result).write(to: resultFile, options: .atomic)
     }
 }
@@ -223,7 +242,7 @@ private final class BackgroundTransferDelegate: NSObject, URLSessionDownloadDele
     }
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         guard let error, let id = task.taskDescription.flatMap(UUID.init(uuidString:)) else { return }
-        MainActor.assumeIsolated { manager?.fail(id, message: "\(error.localizedDescription) Tap Try again to reconnect.") }
+        MainActor.assumeIsolated { manager?.record("Background failed", error: error); manager?.fail(id, message: "\(error.localizedDescription) Tap Try again to reconnect.") }
     }
     func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
         MainActor.assumeIsolated { let completion = manager?.backgroundCompletion; manager?.backgroundCompletion = nil; completion?() }
