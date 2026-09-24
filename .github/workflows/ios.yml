@@ -62,19 +62,17 @@ jobs:
             CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
             build 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" | xcbeautify
 
-      - name: Check iPhone downloads and simulator layout
+      - name: Check iPhone downloads
         timeout-minutes: 10
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash Scripts/Screenshots.sh
+        run: bash Scripts/CheckDownloads.sh
 
-      - name: Keep light and dark screenshots
+      - name: Keep iPhone download check results
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: Forge-screenshots-${{ github.run_number }}-${{ github.run_attempt }}
-          path: |
-            dist/screenshots/*.png
-            dist/download-check.json
+          name: iOS-checks-${{ github.run_number }}-${{ github.run_attempt }}
+          path: dist/download-check.json
           if-no-files-found: error
           retention-days: 14
 
@@ -117,7 +115,6 @@ jobs:
             ${{ runner.temp }}/xcodebuild.log
             ${{ runner.temp }}/simulator-build.log
             dist/download-check.json
-            dist/screenshots/download-check.png
           if-no-files-found: ignore
           retention-days: 7
 
@@ -187,19 +184,17 @@ jobs:
             adb install -t -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
             adb shell run-as app.forge.github.debug mkdir -p files
             printf '%s' "$GH_TOKEN" | adb shell run-as app.forge.github.debug tee files/live-token > /dev/null
-            mkdir -p ../dist/android-screenshots
-            adb shell am instrument -w -r app.forge.github.debug.test/androidx.test.runner.AndroidJUnitRunner | tee ../dist/android-screenshots/instrumentation.txt
+            mkdir -p ../dist/android-checks
+            adb shell am instrument -w -r app.forge.github.debug.test/androidx.test.runner.AndroidJUnitRunner | tee ../dist/android-checks/instrumentation.txt
             adb shell run-as app.forge.github.debug rm files/live-token
-            adb pull /sdcard/Android/data/app.forge.github.debug/files/screenshots/. ../dist/android-screenshots/
-            grep -Eq '^OK \([1-9][0-9]* tests?\)' ../dist/android-screenshots/instrumentation.txt
+            grep -Eq '^OK \([1-9][0-9]* tests?\)' ../dist/android-checks/instrumentation.txt
             adb install -r app/build/outputs/apk/release/app-release.apk
             # Pixel Launcher can leave an unrelated ANR dialog covering the app under test.
             adb shell am force-stop com.google.android.apps.nexuslauncher
             adb shell am start -W -n app.forge.github/.MainActivity
             adb shell pidof app.forge.github
-            for attempt in 1 2 3 4 5; do adb shell uiautomator dump /sdcard/forge-release.xml > /dev/null; adb shell cat /sdcard/forge-release.xml > ../dist/android-screenshots/release-home.xml; grep -q 'text="Home"' ../dist/android-screenshots/release-home.xml && break; sleep 2; done
-            adb exec-out screencap -p > ../dist/android-screenshots/release-home.png
-            grep -q 'text="Home"' ../dist/android-screenshots/release-home.xml
+            for attempt in 1 2 3 4 5; do adb shell uiautomator dump /sdcard/forge-release.xml > /dev/null; adb shell cat /sdcard/forge-release.xml > ../dist/android-checks/release-home.xml; grep -q 'text="Home"' ../dist/android-checks/release-home.xml && break; sleep 2; done
+            grep -q 'text="Home"' ../dist/android-checks/release-home.xml
 
       - name: Verify and package the signed APK
         id: package
@@ -226,12 +221,12 @@ jobs:
           compression-level: 0
           retention-days: 14
 
-      - name: Keep Android screenshots and checks
+      - name: Keep Android check results
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: Android-checks-${{ github.run_number }}-${{ github.run_attempt }}
           path: |
-            dist/android-screenshots/
+            dist/android-checks/
             Android/app/build/reports/tests/
             Android/app/build/reports/androidTests/
             Android/app/build/reports/lint-results-release.html
@@ -249,7 +244,7 @@ jobs:
           name: Android-failure-${{ github.run_number }}-${{ github.run_attempt }}
           path: |
             Android/app/build/reports/
-            dist/android-screenshots/
+            dist/android-checks/
           if-no-files-found: ignore
           retention-days: 7
 
@@ -301,6 +296,8 @@ jobs:
 
           - **iOS 17+:** download Forge-unsigned.ipa and sign it with your sideloading tool before installing. No Apple certificate or provisioning profile is included.
           - **Android 8.0+:** download and install Forge-android.apk. It uses Forge's persistent signing key so future builds can update the same app.
+
+          New in 0.9.3: long-press a Download control or an entry in Downloads to copy its download link. Release files use their direct GitHub download URL, and Actions artifacts link to their download page (GitHub sign-in may be required). Builds keep test results but no longer generate or upload screenshots.
 
           New in 0.9.2: Home includes pull requests and issues submitted by others to repositories you own, alongside conversations you participate in. Pull requests are grouped by repository, with repository owners and PR authors labeled. PRs have a left-hand changed-files panel, searchable paths, old/new line numbers, syntax colors and red/green diff backgrounds. The file panel collapses on phones and stays beside the diff on wider screens. Profile READMEs now use the same full-width layout and image rendering as repository READMEs.
 

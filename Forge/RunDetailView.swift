@@ -61,7 +61,7 @@ struct RunDetailView: View {
                                 Text("Expires \(date.formatted(date: .abbreviated, time: .omitted))")
                             }
                         }.font(.caption).foregroundStyle(.secondary)
-                        if let specification = try? DownloadSpec.artifact(artifact, in: entry.repository) {
+                        if let specification = try? DownloadSpec.artifact(artifact, in: entry.repository, runID: run.id) {
                             DownloadControl(specification: specification)
                         }
                     }.padding(.vertical, 6)

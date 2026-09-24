@@ -40,7 +40,7 @@ struct LatestBuildView: View {
               footer: { Text("Starts with the most recent successful run. Choose another workflow or an older run if it produced the build you need.") }
             Section("Build downloads") {
                 ForEach(artifacts) { artifact in
-                    if let spec = try? DownloadSpec.artifact(artifact, in: repository) {
+                    if let spec = try? DownloadSpec.artifact(artifact, in: repository, runID: selected) {
                         VStack(alignment: .leading, spacing: 10) { Text(artifact.name).font(.headline); Text(fileSize(artifact.sizeInBytes)).font(.caption).foregroundStyle(.secondary); DownloadControl(specification: spec) }
                     }
                 }

@@ -56,6 +56,7 @@ struct DownloadsView: View {
                             }
                         }
                         .padding(.vertical, 8)
+                        .downloadLinkMenu(entry.specification)
                         .swipeActions(allowsFullSwipe: false) {
                             Button("Delete", role: .destructive) { deleting = entry }
                         }

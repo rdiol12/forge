@@ -5,6 +5,24 @@ import FoundationNetworking
 #endif
 
 final class WorkspaceFeaturesTests: XCTestCase {
+    func testDownloadLinksSurviveStorageAndNeverCopyTemporaryCredentials() throws {
+        let repository = try Repository("owner/repo")
+        let asset = try GitHubClient.decoder().decode(ReleaseAsset.self, from: Data(#"{"id":1,"name":"app.ipa","size":1,"download_count":0,"content_type":"application/octet-stream","browser_download_url":"https://github.com/owner/repo/releases/download/v1/app.ipa"}"#.utf8))
+        let spec = DownloadSpec.asset(asset, in: repository)
+        XCTAssertEqual(spec.downloadURL.absoluteString, "https://github.com/owner/repo/releases/download/v1/app.ipa")
+        XCTAssertEqual(try JSONDecoder().decode(DownloadSpec.self, from: JSONEncoder().encode(spec)).downloadURL, spec.downloadURL)
+        var legacy = try JSONSerialization.jsonObject(with: JSONEncoder().encode(spec)) as! [String: Any]
+        legacy.removeValue(forKey: "sourceURL")
+        XCTAssertEqual(try JSONDecoder().decode(DownloadSpec.self, from: JSONSerialization.data(withJSONObject: legacy)).downloadURL.absoluteString, "https://api.github.com/repos/owner/repo/releases/assets/1")
+        var raw = spec
+        raw.sourceURL = URL(string: "https://raw.githubusercontent.com/owner/repo/main/file.txt?token=private#fragment")
+        XCTAssertEqual(raw.downloadURL.absoluteString, "https://raw.githubusercontent.com/owner/repo/main/file.txt")
+        raw.sourceURL = URL(string: "https://release-assets.githubusercontent.com/file?sig=temporary")
+        XCTAssertEqual(raw.downloadURL.host, "api.github.com")
+        let artifact = Artifact(id: 7, name: "build", sizeInBytes: 1, expired: false, expiresAt: nil)
+        XCTAssertEqual(try DownloadSpec.artifact(artifact, in: repository, runID: 42).downloadURL.absoluteString, "https://github.com/owner/repo/actions/runs/42/artifacts/7")
+    }
+
     func testARecoveredDownloadAcceptsLateCompletionButNeverRevivesUserCancellation() throws {
         let spec = DownloadSpec(id: "asset", name: "app.ipa", repository: "owner/repo", path: "/repos/owner/repo/releases/assets/1", accept: "application/octet-stream", size: 1, requiresAuthentication: false)
         var entry = DownloadEntry(id: UUID(), specification: spec, createdAt: .now, active: true)

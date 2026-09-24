@@ -23,11 +23,24 @@ struct DownloadSpec: Codable, Identifiable, Sendable {
     let accept: String
     let size: Int64
     let requiresAuthentication: Bool
+    var sourceURL: URL? = nil
+
+    var downloadURL: URL {
+        if let sourceURL, var url = URLComponents(url: sourceURL, resolvingAgainstBaseURL: false),
+           url.scheme == "https", ["github.com", "raw.githubusercontent.com"].contains(url.host?.lowercased() ?? ""),
+           url.user == nil, url.password == nil, url.port == nil || url.port == 443 {
+            url.query = nil; url.fragment = nil
+            if let result = url.url { return result }
+        }
+        var url = URLComponents()
+        url.scheme = "https"; url.host = "api.github.com"; url.path = path
+        return url.url!
+    }
 
     static func asset(_ asset: ReleaseAsset, in repository: Repository) -> Self {
         Self(id: "asset-\(repository.id)-\(asset.id)", name: safeFilename(asset.name), repository: repository.fullName,
              path: "/repos/\(repository.fullName)/releases/assets/\(asset.id)", accept: "application/octet-stream",
-             size: asset.size, requiresAuthentication: false)
+             size: asset.size, requiresAuthentication: false, sourceURL: asset.browserDownloadUrl)
     }
 
     static func repositoryFile(_ file: RepositoryFile, in repository: Repository) throws -> Self {
@@ -40,7 +53,8 @@ struct DownloadSpec: Codable, Identifiable, Sendable {
     static func repositoryArchive(in repository: Repository, sha: String, name: String) throws -> Self {
         guard sha.range(of: #"^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$"#, options: .regularExpression) != nil else { throw GitHubError("Choose a branch before downloading its ZIP.") }
         return Self(id: "archive-\(repository.id)-\(sha)", name: safeFilename("\(repository.name)-\(name).zip"), repository: repository.fullName,
-                    path: "/repos/\(repository.fullName)/zipball/\(sha)", accept: "application/vnd.github+json", size: 0, requiresAuthentication: false)
+                    path: "/repos/\(repository.fullName)/zipball/\(sha)", accept: "application/vnd.github+json", size: 0, requiresAuthentication: false,
+                    sourceURL: URL(string: "https://github.com/\(repository.fullName)/archive/\(sha).zip"))
     }
 
     static func jobLog(in repository: Repository, job: WorkflowJob) -> Self {
@@ -48,11 +62,12 @@ struct DownloadSpec: Codable, Identifiable, Sendable {
              path: "/repos/\(repository.fullName)/actions/jobs/\(job.id)/logs", accept: "application/vnd.github+json", size: 0, requiresAuthentication: false)
     }
 
-    static func artifact(_ artifact: Artifact, in repository: Repository, now: Date = .now) throws -> Self {
+    static func artifact(_ artifact: Artifact, in repository: Repository, runID: Int64? = nil, now: Date = .now) throws -> Self {
         guard !artifact.isExpired(at: now) else { throw GitHubError("This artifact has expired and cannot be downloaded.") }
         return Self(id: "artifact-\(repository.id)-\(artifact.id)", name: safeFilename(artifact.name + ".zip"), repository: repository.fullName,
                     path: "/repos/\(repository.fullName)/actions/artifacts/\(artifact.id)/zip", accept: "application/vnd.github+json",
-                    size: artifact.sizeInBytes, requiresAuthentication: true)
+                    size: artifact.sizeInBytes, requiresAuthentication: true,
+                    sourceURL: runID.flatMap { $0 > 0 ? URL(string: "https://github.com/\(repository.fullName)/actions/runs/\($0)/artifacts/\(artifact.id)") : nil })
     }
 
     static func safeFilename(_ input: String) -> String {

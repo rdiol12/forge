@@ -6,6 +6,7 @@ A native SwiftUI iOS and Kotlin/Jetpack Compose Android GitHub companion focused
 
 ## Implemented
 
+- Long-press a Download control or an entry in Downloads to copy its link. Release assets use their direct GitHub download URL; Actions artifacts use their GitHub download page. Private files and Actions artifacts still require access on GitHub.
 - Approve or reject pending environment deployments directly from an Actions run. Forge checks current reviewer eligibility before submission; GitHub enforces environment protection rules. Deployment reviews need Deployments write permission and an eligible account.
 - Convert an open pull request to draft or mark it ready for review, with confirmation. Filter loaded changed files by name/path and copy a repository-relative file path.
 - Open README Contents for a full-screen reader with heading links. Native Markdown previews also offer a heading menu.
@@ -73,7 +74,7 @@ The public [Forge repository](https://github.com/rdiol12/forge) builds iOS on ma
 
 1. Runs the shared Swift tests and OAuth backend tests.
 2. Builds the Release iOS device target with Xcode 26.3 and signing disabled. Native Liquid Glass navigation is available on iOS 26; earlier systems use their native appearance.
-3. Builds and launches an iPhone simulator and saves light/dark Home screenshots plus a native issue screenshot as a workflow artifact. The screenshot simulator has four public favorite repositories; installed IPAs still start empty.
+3. Builds and launches an iPhone simulator to verify real release, Actions-artifact, and repository downloads. The workflow keeps test results without generating or uploading screenshots.
 4. Packages the app as `Payload/Forge.app` inside an IPA and checks its ZIP integrity and SHA-256 checksum.
 5. In parallel, tests/lints Android, builds the signed APK, checks native screens and Keystore on an emulator, and verifies authenticated repository reads and real release/artifact downloads. It also launches the optimized release APK and verifies its signature and checksum.
 6. Keeps both apps and their checks as Actions artifacts. After **both jobs pass**, one publishing job checks matching app versions and creates **one public release** containing the IPA, APK and a shared `SHA256SUMS`. The release stays a draft until all three files have uploaded successfully. If either build fails, nothing is published.

@@ -2,12 +2,16 @@ package app.forge.github
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
@@ -64,7 +68,7 @@ fun runStatus(run: JSONObject) = run.s("conclusion").ifBlank { run.s("status") }
                 val expired = artifact.optBoolean("expired") || runCatching { Instant.parse(artifact.s("expires_at")).isBefore(Instant.now()) }.getOrDefault(false)
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Text(artifact.s("name"), fontWeight = FontWeight.Medium); Note("${bytes(artifact.optLong("size_in_bytes"))} · ${if (expired) "Expired" else "Expires ${artifact.s("expires_at").take(10)}"}")
-                    if (!expired) DownloadButton(DownloadSpec("/repos/${page.repo}/actions/artifacts/${positiveID(artifact.s("id"))}/zip", artifact.s("name") + ".zip", auth = true))
+                    if (!expired) DownloadButton(DownloadSpec("/repos/${page.repo}/actions/artifacts/${positiveID(artifact.s("id"))}/zip", artifact.s("name") + ".zip", auth = true, sourceURL = "https://github.com/${page.repo}/actions/runs/${page.id}/artifacts/${artifact.s("id")}"))
                 }
             }
         }
@@ -94,7 +98,22 @@ fun runStatus(run: JSONObject) = run.s("conclusion").ifBlank { run.s("status") }
 
 @Composable fun DownloadButton(spec: DownloadSpec) {
     val state = LocalForge.current
-    OutlinedButton(onClick = { state.task { state.downloads.start(state.api, spec); state.notice = "Download started. Open Downloads to view progress." } }) { Text("Download") }
+    DownloadLinkMenu(spec, onClick = { state.task { state.downloads.start(state.api, spec); state.notice = "Download started. Open Downloads to view progress." } }) { modifier ->
+        Surface(shape = ButtonDefaults.outlinedShape, border = ButtonDefaults.outlinedButtonBorder(enabled = true), color = MaterialTheme.colorScheme.surface, contentColor = MaterialTheme.colorScheme.primary) {
+            Box(modifier.minimumInteractiveComponentSize().padding(ButtonDefaults.ContentPadding), contentAlignment = androidx.compose.ui.Alignment.Center) { Text("Download", style = MaterialTheme.typography.labelLarge) }
+        }
+    }
+}
+
+@Composable private fun DownloadLinkMenu(spec: DownloadSpec, onClick: () -> Unit = {}, content: @Composable (Modifier) -> Unit) {
+    val state = LocalForge.current; val clipboard = LocalClipboardManager.current
+    var menu by remember(spec.path, spec.sourceURL) { mutableStateOf(false) }
+    Box {
+        content(Modifier.combinedClickable(role = Role.Button, onClick = onClick, onLongClickLabel = "Copy download link", onLongClick = { menu = true }))
+        DropdownMenu(menu, { menu = false }) {
+            DropdownMenuItem(text = { Text("Copy download link") }, onClick = { clipboard.setText(AnnotatedString(spec.downloadURL)); menu = false; state.notice = "Download link copied." })
+        }
+    }
 }
 
 @Composable fun LogScreen(page: Page) {
@@ -118,8 +137,8 @@ fun runStatus(run: JSONObject) = run.s("conclusion").ifBlank { run.s("status") }
     LaunchedEffect(Unit) { while (true) { state.downloads.refresh(); delay(2000) } }
     Screen {
         if (state.downloads.entries.isEmpty()) Note("Downloaded release files, artifacts, repository ZIPs, and logs appear here.")
-        state.downloads.entries.forEach { entry -> Group {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        state.downloads.entries.forEach { entry -> Group { DownloadLinkMenu(entry.spec) { modifier ->
+            Column(modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(entry.spec.name, fontWeight = FontWeight.Medium); Text(entry.status, style = MaterialTheme.typography.bodySmall)
                 if (entry.active) { entry.progress?.let { LinearProgressIndicator(progress = { it }, modifier = Modifier.fillMaxWidth()) } ?: LinearProgressIndicator(Modifier.fillMaxWidth()); TextButton(onClick = { state.downloads.cancel(entry) }) { Text("Cancel") } }
                 else if (entry.status == "Saved" && runCatching { state.downloads.file(entry) }.isSuccess) Row {
@@ -131,7 +150,7 @@ fun runStatus(run: JSONObject) = run.s("conclusion").ifBlank { run.s("status") }
                 }
                 TextButton(onClick = { deleting = entry }) { Text(if (!entry.active && entry.status != "Saved") "Remove failed download" else "Delete downloaded file", color = MaterialTheme.colorScheme.error) }
             }
-        } }
+        } } }
         Note("Archives and release assets continue through Android's download manager. Direct API files need Forge running. Try again starts a fresh request if a signed download URL expires.")
     }
     deleting?.let { entry -> AlertDialog(onDismissRequest = { deleting = null }, title = { Text("Delete this download?") },

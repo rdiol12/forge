@@ -1,5 +1,6 @@
 import SwiftUI
 import QuickLook
+import UIKit
 
 @MainActor
 struct ReleaseDetailView: View {
@@ -141,6 +142,7 @@ struct DownloadControl: View {
     @Environment(DownloadManager.self) private var downloads
 
     var body: some View {
+        Group {
         if let active = downloads.entries.first(where: { $0.specification.id == specification.id && $0.active }) {
             HStack {
                 ProgressView(value: active.progress).frame(maxWidth: 120)
@@ -162,6 +164,15 @@ struct DownloadControl: View {
                 Label("Download", systemImage: "arrow.down.circle.fill")
             }.buttonStyle(.bordered).controlSize(.regular)
                 .accessibilityLabel("Download \(specification.name)")
+        }
+        }.downloadLinkMenu(specification)
+    }
+}
+
+extension View {
+    func downloadLinkMenu(_ specification: DownloadSpec) -> some View {
+        contextMenu {
+            Button("Copy download link", systemImage: "link") { UIPasteboard.general.string = specification.downloadURL.absoluteString }
         }
     }
 }

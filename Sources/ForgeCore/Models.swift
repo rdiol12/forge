@@ -99,6 +99,7 @@ struct ReleaseAsset: Decodable, Identifiable, Sendable {
     let size: Int64
     let downloadCount: Int64
     let contentType: String
+    var browserDownloadUrl: URL? = nil
 }
 
 struct RepositoryRun: Identifiable, Sendable {

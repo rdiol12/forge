@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -26,24 +25,16 @@ class AppTest {
     @get:Rule val compose = createComposeRule()
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
     private fun state() = ForgeState(context.applicationContext as Application)
-    private fun screenshot(name: String) {
-        compose.waitForIdle()
-        val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
-        val folder = File(context.getExternalFilesDir(null), "screenshots").apply { mkdirs() }
-        File(folder, "$name.png").outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
-    }
 
     @Test fun nativeNavigationAndLightAppearance() {
         val state = state()
         compose.setContent { ForgeTheme(dark = false) { ForgeApp(state) } }
         compose.onNodeWithText("My Work").assertIsDisplayed()
         compose.onNodeWithText("Pull Requests").assertIsDisplayed()
-        screenshot("home-light")
         compose.onNodeWithContentDescription("Create or add").performClick()
         compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("Sign in with GitHub").assertIsDisplayed()
         compose.onNodeWithText("Forge · Version ${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})", substring = true).performScrollTo().assertIsDisplayed()
-        screenshot("settings-version")
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithText("Explore").performClick()
         compose.onNodeWithText("Search repositories or enter owner/name").assertIsDisplayed()
@@ -54,7 +45,7 @@ class AppTest {
     @Test fun darkAppearance() {
         val state = state()
         compose.setContent { ForgeTheme(dark = true) { ForgeApp(state) } }
-        compose.onNodeWithText("My Work").assertIsDisplayed(); screenshot("home-dark")
+        compose.onNodeWithText("My Work").assertIsDisplayed()
     }
 
     @Test fun codeReaderSearchWrapAndCopy() {
@@ -63,7 +54,6 @@ class AppTest {
         compose.onNodeWithText("Wrap").performClick()
         compose.onNodeWithText("Find in file").performTextInput("success")
         compose.onNodeWithText("1/1 ↓").assertIsDisplayed()
-        screenshot("code")
         compose.onNodeWithText("Copy").performClick()
     }
 
@@ -75,7 +65,6 @@ class AppTest {
         } } } }
         compose.onNodeWithText("The Octocat").performClick()
         compose.runOnIdle { assertEquals(Page("profile", "octocat", id = "octocat"), state.stack.last()) }
-        screenshot("people")
     }
 
     @Test fun vaultEncryptsAndPersistsOnDevice() {
@@ -117,7 +106,6 @@ class AppTest {
         compose.onNodeWithText("Keep my issue").assertIsDisplayed()
         compose.onNodeWithText("Keep my description").assertIsDisplayed()
         compose.onNodeWithText("Labels (1)").assertIsDisplayed()
-        screenshot("issue-composer")
     }
 
     @Test fun removedCommitRecordsPersistAndStayAccountScoped() {
@@ -130,7 +118,6 @@ class AppTest {
             assertTrue(state().recoveries.any { it.s("id") == "fixture" })
             compose.setContent { ForgeTheme { CompositionLocalProvider(LocalForge provides state) { DeletedCommits("") } } }
             compose.onNodeWithText("owner/repo").assertIsDisplayed(); compose.onNodeWithText("Saved commit").assertIsDisplayed()
-            screenshot("deleted-commits")
             compose.runOnIdle { state.disconnect(); assertTrue(state.recoveries.isEmpty()) }
         } finally { vault.save("session", original); preferences.edit().remove("recoveries:forge-recovery-test").commit() }
     }

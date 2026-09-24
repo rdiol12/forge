@@ -5,6 +5,15 @@ import org.junit.Test
 import java.net.URI
 
 class CoreTest {
+    @Test fun downloadLinksSurviveStorageAndNeverCopyTemporaryCredentials() {
+        val spec = DownloadSpec("/repos/owner/repo/releases/assets/1", "app.apk", sourceURL = "https://github.com/owner/repo/releases/download/v1/app.apk")
+        assertEquals(spec.sourceURL, spec.downloadURL)
+        assertEquals(spec.downloadURL, DownloadSpec.from(spec.json()).downloadURL)
+        assertEquals("https://api.github.com/repos/owner/repo/releases/assets/1", DownloadSpec.from(spec.json().apply { remove("sourceURL") }).downloadURL)
+        assertEquals("https://raw.githubusercontent.com/owner/repo/main/file.txt", spec.copy(sourceURL = "https://raw.githubusercontent.com/owner/repo/main/file.txt?token=private#fragment").downloadURL)
+        for (url in listOf("https://release-assets.githubusercontent.com/file?sig=temporary", "https://github.com.evil.test/file", "https://token@github.com/file")) assertEquals("https://api.github.com/repos/owner/repo/releases/assets/1", spec.copy(sourceURL = url).downloadURL)
+    }
+
     @Test fun separateReadmeEditsMergeButOverlappingEditsNeedAChoice() {
         val base = "# Project\n\nInstall\nold command\n\nLicense\nMIT\n"
         val current = base.replace("# Project", "# Forge")

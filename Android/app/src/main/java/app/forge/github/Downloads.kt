@@ -14,9 +14,15 @@ import java.io.File
 import java.net.URI
 import java.util.UUID
 
-data class DownloadSpec(val path: String, val name: String, val accept: String = "application/vnd.github+json", val auth: Boolean = false) {
-    fun json() = json("path" to path, "name" to name, "accept" to accept, "auth" to auth)
-    companion object { fun from(j: JSONObject) = DownloadSpec(j.getString("path"), safeName(j.getString("name")), j.getString("accept"), j.optBoolean("auth")) }
+data class DownloadSpec(val path: String, val name: String, val accept: String = "application/vnd.github+json", val auth: Boolean = false, val sourceURL: String = "") {
+    val downloadURL: String get() {
+        val source = runCatching { URI(sourceURL) }.getOrNull()
+        return if (source != null && source.scheme == "https" && source.host?.lowercase() in listOf("github.com", "raw.githubusercontent.com") && source.rawUserInfo == null && source.port in listOf(-1, 443)) {
+            source.toASCIIString().substringBefore('?').substringBefore('#')
+        } else apiUrl(path).toASCIIString()
+    }
+    fun json() = json("path" to path, "name" to name, "accept" to accept, "auth" to auth, "sourceURL" to sourceURL)
+    companion object { fun from(j: JSONObject) = DownloadSpec(j.getString("path"), safeName(j.getString("name")), j.getString("accept"), j.optBoolean("auth"), j.s("sourceURL")) }
 }
 
 class DownloadEntry(val key: String, val spec: DownloadSpec) {

@@ -154,7 +154,7 @@ import org.json.JSONObject
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(asset.s("name"), fontWeight = FontWeight.Medium)
                     Note("${bytes(asset.optLong("size"))} · ${asset.optLong("download_count")} downloads")
-                    DownloadButton(DownloadSpec("/repos/${page.repo}/releases/assets/${positiveID(asset.s("id"))}", asset.s("name"), "application/octet-stream"))
+                    DownloadButton(DownloadSpec("/repos/${page.repo}/releases/assets/${positiveID(asset.s("id"))}", asset.s("name"), "application/octet-stream", sourceURL = asset.s("browser_download_url")))
                 }
             }
         }

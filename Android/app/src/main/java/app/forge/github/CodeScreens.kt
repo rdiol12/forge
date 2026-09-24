@@ -62,7 +62,7 @@ private data class Tree(val branch: String, val sha: String, val path: String, v
             } else {
                 Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { picker = true }) { Text(tree.branch.ifBlank { tree.sha.take(12) }) }
-                    DownloadButton(DownloadSpec("/repos/${page.repo}/zipball/${tree.sha}", "${page.repo.substringAfter('/')}-${tree.branch.ifBlank { tree.sha.take(12) }}.zip"))
+                    DownloadButton(DownloadSpec("/repos/${page.repo}/zipball/${tree.sha}", "${page.repo.substringAfter('/')}-${tree.branch.ifBlank { tree.sha.take(12) }}.zip", sourceURL = "https://github.com/${page.repo}/archive/${tree.sha}.zip"))
                 }
                 Note("${tree.path.ifBlank { page.repo }} · ${tree.sha.take(12)}")
                 val files = (tree.content as JSONArray).objects().sortedWith(compareBy({ it.s("type") != "dir" }, { it.s("name").lowercase() }))
