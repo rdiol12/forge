@@ -160,6 +160,28 @@ final class DownloadManager {
         guard let index = entries.firstIndex(where: { $0.id == id && $0.active }) else { return }
         entries[index].active = false; entries[index].message = message; persist()
     }
+    fileprivate func backgroundFailed(_ id: UUID, request: URLRequest?, error: Error) {
+        record("Background failed", error: error)
+        let code = (error as NSError)
+        guard entries.contains(where: { $0.id == id && $0.active }), UIApplication.shared.applicationState == .active,
+              code.domain == NSURLErrorDomain, [URLError.unknown.rawValue, URLError.cannotCreateFile.rawValue].contains(code.code),
+              let request, request.value(forHTTPHeaderField: "Authorization") == nil else {
+            fail(id, message: "\(error.localizedDescription) Tap Try again to reconnect."); return
+        }
+        // A sideloaded app or simulator may not have a working background transfer service.
+        // Stream the same credential-free request once while the app is open.
+        transfers[id] = nil
+        preparing[id] = Task {
+            defer { preparing[id] = nil }
+            do {
+                record("Foreground recovery")
+                let (file, response) = try await foreground.download(for: request, delegate: GitHubRedirectDelegate())
+                defer { try? FileManager.default.removeItem(at: file) }
+                try Task.checkCancellation()
+                finish(id, temporary: file, response: response)
+            } catch { record("Foreground recovery failed", error: error); fail(id, message: Task.isCancelled ? "Cancelled" : "\(error.localizedDescription) Tap Try again to reconnect.") }
+        }
+    }
     func cancel(_ entry: DownloadEntry) {
         preparing[entry.id]?.cancel(); transfers[entry.id]?.cancel()
         fail(entry.id, message: "Cancelled")
@@ -242,7 +264,7 @@ private final class BackgroundTransferDelegate: NSObject, URLSessionDownloadDele
     }
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         guard let error, let id = task.taskDescription.flatMap(UUID.init(uuidString:)) else { return }
-        MainActor.assumeIsolated { manager?.record("Background failed", error: error); manager?.fail(id, message: "\(error.localizedDescription) Tap Try again to reconnect.") }
+        MainActor.assumeIsolated { manager?.backgroundFailed(id, request: task.originalRequest, error: error) }
     }
     func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
         MainActor.assumeIsolated { let completion = manager?.backgroundCompletion; manager?.backgroundCompletion = nil; completion?() }

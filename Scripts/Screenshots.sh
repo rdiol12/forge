@@ -3,7 +3,7 @@
 set -euxo pipefail
 xcodebuild -project Forge.xcodeproj -scheme Forge -configuration Debug \
   -destination 'generic/platform=iOS Simulator' -derivedDataPath build-simulator \
-  CODE_SIGNING_ALLOWED=NO CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER:-1}" build 2>&1 | tee "$RUNNER_TEMP/simulator-build.log" | xcbeautify
+  CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER:-1}" build 2>&1 | tee "$RUNNER_TEMP/simulator-build.log" | xcbeautify
 runtime=$(python3 - <<'PY'
 import json, subprocess
 # Fail promptly when CoreSimulator discovery stalls on a hosted runner.

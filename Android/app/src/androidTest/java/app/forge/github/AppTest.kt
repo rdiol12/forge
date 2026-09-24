@@ -145,10 +145,11 @@ class AppTest {
         val branch = info.getString("default_branch")
         val sha = api.obj("/repos/$repo/git/ref/heads/$branch").o("object").getString("sha")
         assertTrue(validSha(sha))
-        val readme = api.obj("/repos/$repo/readme", mapOf("ref" to sha))
-        assertTrue(api.blob(repo, readme.getString("sha")).contains("Forge"))
-        val document = api.readme(repo, sha).second
-        assertTrue(document.html.contains("Forge"))
+        val source = api.obj("/repos/$repo/contents/Package.swift", mapOf("ref" to sha))
+        assertTrue(api.blob(repo, source.getString("sha")).contains("ForgeCore"))
+        val docsSha = api.obj("/repos/cli/cli/git/ref/heads/trunk").o("object").getString("sha")
+        val document = api.readme("cli/cli", docsSha).second
+        assertTrue(document.html.contains("GitHub CLI"))
         val png = api.data("/repos/$repo/contents/Forge/Assets.xcassets/AppIcon.appiconset/ForgeIcon.png", mapOf("ref" to sha))
         assertArrayEquals(byteArrayOf(-119, 80, 78, 71), png.take(4).toByteArray())
         assertTrue(api.list("/repos/$repo/commits", query = mapOf("sha" to sha)).isNotEmpty())
