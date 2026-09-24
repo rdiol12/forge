@@ -143,6 +143,7 @@ struct PullDiffView: View {
                             .background(line.text.hasPrefix("+") ? Color.green.opacity(0.12) : line.text.hasPrefix("-") ? Color.red.opacity(0.12) : line.text.hasPrefix("@@") ? Color.blue.opacity(0.12) : Color.clear)
                     }
                 }.frame(width: max(geometry.size.width, codeWidth + gutter * 2 + 80), alignment: .leading)
+                    .frame(minHeight: geometry.size.height, alignment: .topLeading)
             }
             }
             if file.patch?.isEmpty != false { ContentUnavailableView("No text diff", systemImage: "doc", description: Text("GitHub omitted this patch. Binary and some large changes have no text preview.")) }

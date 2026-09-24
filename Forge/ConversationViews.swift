@@ -359,7 +359,7 @@ struct PullFilesView: View {
                 if !wide && showsFiles {
                     ZStack(alignment: .leading) {
                         Color.black.opacity(0.25).onTapGesture { showsFiles = false }.accessibilityLabel("Close file list")
-                        fileList(compact: true).frame(width: min(300, geometry.size.width * 0.85)).background(Color(uiColor: .systemBackground)).shadow(radius: 8)
+                        fileList(compact: true).frame(width: min(300, geometry.size.width * 0.85)).background(Color(uiColor: .systemBackground)).overlay(alignment: .trailing) { Divider() }
                     }
                 }
             }
