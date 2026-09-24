@@ -193,6 +193,8 @@ jobs:
             adb pull /sdcard/Android/data/app.forge.github.debug/files/screenshots/. ../dist/android-screenshots/
             grep -Eq '^OK \([1-9][0-9]* tests?\)' ../dist/android-screenshots/instrumentation.txt
             adb install -r app/build/outputs/apk/release/app-release.apk
+            # Pixel Launcher can leave an unrelated ANR dialog covering the app under test.
+            adb shell am force-stop com.google.android.apps.nexuslauncher
             adb shell am start -W -n app.forge.github/.MainActivity
             adb shell pidof app.forge.github
             for attempt in 1 2 3 4 5; do adb shell uiautomator dump /sdcard/forge-release.xml > /dev/null; adb shell cat /sdcard/forge-release.xml > ../dist/android-screenshots/release-home.xml; grep -q 'text="Home"' ../dist/android-screenshots/release-home.xml && break; sleep 2; done

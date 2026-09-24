@@ -16,7 +16,17 @@ PY
 device=$(xcrun simctl create 'Forge visual check' com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro "$runtime")
 trap 'if [[ -n "${data_dir:-}" ]]; then rm -f "$data_dir/tmp/download-check-token"; fi; xcrun simctl shutdown "$device" || true' EXIT
 xcrun simctl boot "$device"
-xcrun simctl bootstatus "$device" -b
+python3 - "$device" <<'PY'
+import subprocess, sys
+device = sys.argv[1]
+try:
+    subprocess.run(['xcrun', 'simctl', 'bootstatus', device, '-b'], check=True, timeout=150)
+except subprocess.TimeoutExpired:
+    print('Simulator boot stalled; restarting this test device once.', flush=True)
+    subprocess.run(['xcrun', 'simctl', 'shutdown', device], check=True, timeout=30)
+    subprocess.run(['xcrun', 'simctl', 'boot', device], check=True, timeout=30)
+    subprocess.run(['xcrun', 'simctl', 'bootstatus', device, '-b'], check=True, timeout=150)
+PY
 xcrun simctl status_bar "$device" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
 xcrun simctl install "$device" build-simulator/Build/Products/Debug-iphonesimulator/Forge.app
 data_dir=$(xcrun simctl get_app_container "$device" app.forge.github data)
