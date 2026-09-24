@@ -1,6 +1,7 @@
 package app.forge.github
 
 import android.app.Application
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.SoftwareKeyboardController
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -18,6 +19,12 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class NavigationTest {
     @get:Rule val compose = createComposeRule()
+    private fun screenshot(name: String) {
+        compose.waitForIdle()
+        val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
+        val folder = java.io.File(InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null), "screenshots").apply { mkdirs() }
+        java.io.File(folder, "$name.png").outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+    }
 
     @Test fun homePullRequestsShowContributionsToOwnedRepositories() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -42,6 +49,7 @@ class NavigationTest {
         val owned = compose.onNodeWithText("owner/project\nOwner: owner").fetchSemanticsNode().boundsInRoot.top
         val external = compose.onNodeWithText("zed/library\nOwner: zed").fetchSemanticsNode().boundsInRoot.top
         assertTrue("Group by repository even when GitHub returns a different updated order", owned < external)
+        screenshot("pr-repository-groups")
     }
 
     @Test fun changedFilesPanelSelectsDiffAndPreservesOldAndNewLines() {
@@ -60,11 +68,13 @@ class NavigationTest {
         state.open(Page("diffs", "Changed files", "owner/project", "3", sha = sha))
         compose.setContent { ForgeTheme { ForgeApp(state) } }
         compose.waitUntil(5_000) { compose.onAllNodesWithContentDescription("Show diff for src/Second.kt").fetchSemanticsNodes().isNotEmpty() }
+        screenshot("pr-files-panel")
         compose.onNodeWithContentDescription("Show diff for src/Second.kt").performClick()
         compose.onNodeWithText("-val before = 1").assertIsDisplayed()
         compose.onNodeWithText("+val after = 2").assertIsDisplayed()
         compose.onNodeWithContentDescription("Old line 20").assertIsDisplayed()
         compose.onNodeWithContentDescription("New line 21").assertIsDisplayed()
+        screenshot("pr-diff")
         compose.onNodeWithText("Files", substring = false).performClick()
         compose.onNodeWithContentDescription("Show diff for src/First.kt").performClick()
         compose.onNodeWithText("+val first = 2").assertIsDisplayed()

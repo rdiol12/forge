@@ -14,12 +14,28 @@ print(next(r['identifier'] for r in json.loads(result.stdout)['runtimes']
 PY
 )
 device=$(xcrun simctl create 'Forge visual check' com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro "$runtime")
-trap 'if [[ -n "${data_dir:-}" ]]; then rm -f "$data_dir/tmp/download-check-token"; fi; xcrun simctl shutdown "$device" || true' EXIT
+trap 'if [[ -n "${data_dir:-}" ]]; then rm -f "$data_dir/tmp/download-check-token" "$data_dir/tmp/preview-check-token"; fi; xcrun simctl shutdown "$device" || true' EXIT
 xcrun simctl boot "$device"
-xcrun simctl bootstatus "$device" -b
+python3 - "$device" <<'PY'
+import subprocess, sys
+device = sys.argv[1]
+try:
+    subprocess.run(['xcrun', 'simctl', 'bootstatus', device, '-b'], check=True, timeout=150)
+except subprocess.TimeoutExpired:
+    print('Simulator boot stalled; restarting this test device once.', flush=True)
+    subprocess.run(['xcrun', 'simctl', 'shutdown', device], check=True, timeout=30)
+    subprocess.run(['xcrun', 'simctl', 'boot', device], check=True, timeout=30)
+    subprocess.run(['xcrun', 'simctl', 'bootstatus', device, '-b'], check=True, timeout=150)
+PY
 xcrun simctl status_bar "$device" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
 xcrun simctl install "$device" build-simulator/Build/Products/Debug-iphonesimulator/Forge.app
 data_dir=$(xcrun simctl get_app_container "$device" app.forge.github data)
+launch_preview() {
+  set +x
+  printf '%s' "$GH_TOKEN" > "$data_dir/tmp/preview-check-token"
+  set -x
+  xcrun simctl launch "$device" app.forge.github "$@"
+}
 python3 - "$data_dir" <<'PY'
 import pathlib, plistlib, sys
 prefs = pathlib.Path(sys.argv[1]) / 'Library/Preferences/app.forge.github.plist'
@@ -61,20 +77,20 @@ sleep 2
 xcrun simctl io "$device" screenshot dist/screenshots/home-dark.png
 xcrun simctl terminate "$device" app.forge.github
 xcrun simctl ui "$device" appearance light
-xcrun simctl launch "$device" app.forge.github --forge-preview-url https://github.com/cli/cli/issues/14512
+launch_preview --forge-preview-url https://github.com/cli/cli/issues/14512
 sleep 10
 xcrun simctl io "$device" screenshot dist/screenshots/native-issue.png
 for preview in 'native-repository https://github.com/actions/setup-node' 'native-profile https://github.com/octocat' 'native-following https://github.com/octocat?tab=following' 'native-repositories https://github.com/octocat?tab=repositories' 'native-actions https://github.com/actions/setup-node/actions'; do
   read -r name url <<< "$preview"
   xcrun simctl terminate "$device" app.forge.github
-  xcrun simctl launch "$device" app.forge.github --forge-preview-url "$url"
+  launch_preview --forge-preview-url "$url"
   sleep 8
   xcrun simctl io "$device" screenshot "dist/screenshots/$name.png"
 done
 mkdir -p "$data_dir/Documents"
 cp Sources/ForgeCore/Models.swift "$data_dir/Documents/Preview.swift"
 xcrun simctl terminate "$device" app.forge.github
-xcrun simctl launch "$device" app.forge.github --forge-preview-code "$data_dir/Documents/Preview.swift"
+launch_preview --forge-preview-code "$data_dir/Documents/Preview.swift"
 sleep 3
 xcrun simctl io "$device" screenshot dist/screenshots/code-light.png
 xcrun simctl ui "$device" appearance dark
@@ -82,7 +98,7 @@ sleep 2
 xcrun simctl io "$device" screenshot dist/screenshots/code-dark.png
 xcrun simctl terminate "$device" app.forge.github
 xcrun simctl ui "$device" appearance light
-xcrun simctl launch "$device" app.forge.github --forge-preview-readme
+launch_preview --forge-preview-readme
 sleep 8
 xcrun simctl io "$device" screenshot dist/screenshots/readme-light.png
 xcrun simctl ui "$device" appearance dark
@@ -90,11 +106,11 @@ sleep 2
 xcrun simctl io "$device" screenshot dist/screenshots/readme-dark.png
 xcrun simctl terminate "$device" app.forge.github
 xcrun simctl ui "$device" appearance light
-xcrun simctl launch "$device" app.forge.github --forge-preview-profile-readme
+launch_preview --forge-preview-profile-readme
 sleep 8
 xcrun simctl io "$device" screenshot dist/screenshots/profile-readme.png
 xcrun simctl terminate "$device" app.forge.github
-xcrun simctl launch "$device" app.forge.github --forge-preview-diff
+launch_preview --forge-preview-diff
 sleep 3
 xcrun simctl io "$device" screenshot dist/screenshots/pr-diff-light.png
 xcrun simctl ui "$device" appearance dark
@@ -102,6 +118,6 @@ sleep 2
 xcrun simctl io "$device" screenshot dist/screenshots/pr-diff-dark.png
 xcrun simctl terminate "$device" app.forge.github
 xcrun simctl ui "$device" appearance light
-xcrun simctl launch "$device" app.forge.github --forge-preview-diff --forge-show-files
+launch_preview --forge-preview-diff --forge-show-files
 sleep 3
 xcrun simctl io "$device" screenshot dist/screenshots/pr-files-panel.png

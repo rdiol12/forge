@@ -179,7 +179,7 @@ class AppTest {
             }
             assertTrue("Download timed out", complete)
             val downloaded = withContext(Dispatchers.Main) { downloads.file(entry) }
-            assertTrue(downloaded.length() > 0)
+            assertTrue("${spec.name}: ${entry.status.replace(Regex("https?://\\S+"), "<download URL>")}", downloaded.length() > 0)
             downloaded.inputStream().use { assertEquals('P'.code, it.read()); assertEquals('K'.code, it.read()) }
             withContext(Dispatchers.Main) {
                 // A transfer may finish while another screen still holds its last in-progress state.
