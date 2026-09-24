@@ -18,7 +18,12 @@ struct RepositoryView: View {
     @State private var showingIssues = false
     @State private var showingForks = false
     private var favorite: Bool { store.repositories.contains { $0.id == repository.id } }
+    @ViewBuilder
     var body: some View {
+        if #available(iOS 26.0, *) { repositoryList.listStyle(.insetGrouped) }
+        else { repositoryList.listStyle(.grouped) }
+    }
+    private var repositoryList: some View {
         List {
             Section {
                 VStack(alignment: .trailing, spacing: 12) {
@@ -63,11 +68,13 @@ struct RepositoryView: View {
             }
             Section {
                 HStack { Spacer(); Button { choosingBranch = true } label: { Label(branch?.name ?? "Choose branch", systemImage: "arrow.triangle.branch"); Image(systemName: "chevron.down").font(.caption) } }.buttonStyle(.borderless)
+                    .listRowSeparator(.hidden)
                 NavigationLink { RepositoryFilesView(repository: repository, revision: branch) } label: { WorkLabel("Code", icon: "repo", color: .gray) }
+                    .listRowSeparator(.hidden, edges: .top)
                 if let branch { NavigationLink { CommitListView(repository: repository, branch: branch) } label: { Label("Commits", systemImage: "clock.arrow.circlepath") } }
             }
-            if let branch { Section { ReadmeCard(repository: repository, branch: branch, canEdit: info?.permissions?.push == true) { Task { await load(fresh: true) } } }.listRowInsets(EdgeInsets()) }
-        }.listStyle(.insetGrouped).listSectionSpacing(16)
+            if let branch { Section { ReadmeCard(repository: repository, branch: branch, canEdit: info?.permissions?.push == true) { Task { await load(fresh: true) } } }.readmeSectionLayout() }
+        }.listSectionSpacing(16)
         .navigationTitle(repository.name).navigationBarTitleDisplayMode(.inline)
         .navigationDestination(isPresented: $showingCode) { RepositoryFilesView(repository: repository, revision: branch) }
         .navigationDestination(isPresented: $showingIssues) { ConversationListView(kind: .issue, repository: repository) }

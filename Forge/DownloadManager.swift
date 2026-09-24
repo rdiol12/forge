@@ -84,8 +84,9 @@ final class DownloadManager {
                 // Resolve API redirects in the foreground, where credentials can be stripped before handing storage URLs to iOS.
                 for _ in 0..<5 {
                     let delegate = PreparationDelegate { [weak self] progress in Task { @MainActor in self?.progress(id, value: progress) } }
-                    let (temporary, response) = try await foreground.download(for: request, delegate: delegate)
-                    defer { try? FileManager.default.removeItem(at: temporary) }
+                    // GitHub's redirect can have no body. A download task then fails before returning its Location.
+                    var headers = request; headers.httpMethod = "HEAD"
+                    let (_, response) = try await foreground.data(for: headers, delegate: delegate)
                     try Task.checkCancellation()
                     if let http = response as? HTTPURLResponse, (300..<400).contains(http.statusCode),
                        let location = http.value(forHTTPHeaderField: "Location"), let url = URL(string: location, relativeTo: response.url)?.absoluteURL {
@@ -100,7 +101,10 @@ final class DownloadManager {
                     }
                     try GitHubClient.validate(response)
                     // Direct API blob responses are streamed to disk here; no token is persisted in a background task.
-                    finish(id, temporary: temporary, response: response)
+                    let (temporary, fileResponse) = try await foreground.download(for: request, delegate: delegate)
+                    defer { try? FileManager.default.removeItem(at: temporary) }
+                    try Task.checkCancellation()
+                    finish(id, temporary: temporary, response: fileResponse)
                     return
                 }
                 throw GitHubError("GitHub redirected this download too many times.")
@@ -169,18 +173,26 @@ extension DownloadManager {
             let client = GitHubClient(token: token), repository = try Repository("rdiol12/forge")
             guard let release = try await client.releases(in: repository).first else { throw GitHubError("No release to check.") }
             guard let asset = try await client.assets(in: repository, releaseID: release.id, page: 1).first(where: { $0.name == "SHA256SUMS" }) else { throw GitHubError("Release checksums missing.") }
-            let specification = DownloadSpec.asset(asset, in: repository)
-            start(specification, client: client)
-            let deadline = Date().addingTimeInterval(90)
-            while entries.contains(where: { $0.specification.id == specification.id && $0.active }), Date() < deadline {
-                try await Task.sleep(for: .milliseconds(200))
+            guard let run = try await client.runs(in: repository, status: "success").first,
+                  let artifact = try await client.artifacts(in: repository, runID: run.id, page: 1).first(where: { !$0.isExpired() && $0.name.hasPrefix("Forge-unsigned-") }) else { throw GitHubError("No workflow artifact to check.") }
+            let readme: RepositoryFile = try await client.get("/repos/\(repository.fullName)/contents/README.md")
+            let cases: [(DownloadSpec, (Data) -> Bool)] = [
+                (.asset(asset, in: repository), { String(decoding: $0, as: UTF8.self).contains("Forge-unsigned.ipa") }),
+                (try .artifact(artifact, in: repository), { $0.starts(with: [0x50, 0x4b, 0x03, 0x04]) }),
+                (try .repositoryFile(readme, in: repository), { String(decoding: $0, as: UTF8.self).contains("Forge") })
+            ]
+            for (specification, valid) in cases {
+                start(specification, client: client)
+                let deadline = Date().addingTimeInterval(60)
+                while entries.contains(where: { $0.specification.id == specification.id && $0.active }), Date() < deadline {
+                    try await Task.sleep(for: .milliseconds(200))
+                }
+                guard let entry = entries.first(where: { $0.specification.id == specification.id }), let file = fileURL(for: entry) else {
+                    throw GitHubError("\(specification.name): \(entries.first(where: { $0.specification.id == specification.id })?.message ?? errorMessage ?? "Download did not finish.")")
+                }
+                guard valid(try Data(contentsOf: file)) else { throw GitHubError("Unexpected contents in \(specification.name).") }
             }
-            guard let entry = entries.first(where: { $0.specification.id == specification.id }), let file = fileURL(for: entry) else {
-                throw GitHubError(entries.first(where: { $0.specification.id == specification.id })?.message ?? errorMessage ?? "Download did not finish.")
-            }
-            let contents = try String(contentsOf: file, encoding: .utf8)
-            guard contents.contains("Forge-unsigned.ipa"), contents.contains("Forge-android.apk") else { throw GitHubError("The saved file was not the release checksum file.") }
-            result = ["status": "passed", "check": "Release file saved through the iOS download manager", "bytes": String(contents.utf8.count)]
+            result = ["status": "passed", "check": "Release, Actions artifact and repository file saved through the iOS download manager"]
         } catch { result = ["status": "failed", "error": error.localizedDescription] }
         try? JSONEncoder().encode(result).write(to: resultFile, options: .atomic)
     }

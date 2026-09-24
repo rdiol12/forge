@@ -13,7 +13,7 @@ struct CheckNative {
             let ref: GitReference = try await client.get("/repos/\(repository.fullName)/git/ref/heads/\(info.defaultBranch)")
             let (_, document) = try await client.readme(in: repository, sha: ref.object.sha)
             precondition(document.html.contains("Forge"))
-            let image = try await client.readmeImage(URL(string: "forge-readme://image/Forge/Assets.xcassets/AppIcon.appiconset/AppIcon.png")!, document: document)
+            let image = try await client.readmeImage(URL(string: "forge-readme://image/Forge/Assets.xcassets/AppIcon.appiconset/ForgeIcon.png")!, document: document)
             precondition(image.starts(with: [137, 80, 78, 71]))
             let login = try await client.accountName()
             let profile = try await client.profileHighlights(login: login)

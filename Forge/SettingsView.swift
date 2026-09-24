@@ -130,6 +130,8 @@ struct SettingsView: View {
                 }
 
                 Section("About Forge") {
+                    LabeledContent("Version", value: "\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown") (build \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "Unknown"))")
+                        .textSelection(.enabled)
                     NavigationLink("Open-source licenses") {
                         ScrollView {
                             Text((Bundle.main.url(forResource: "ThirdPartyNotices", withExtension: "md").flatMap { try? String(contentsOf: $0, encoding: .utf8) }) ?? "GitHub Octicons - MIT License")

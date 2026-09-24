@@ -17,8 +17,8 @@ import org.json.JSONObject
     var menu by remember { mutableStateOf(false) }; var more by rememberSaveable { mutableStateOf(false) }
     var branchDialog by rememberSaveable { mutableStateOf(false) }; var pickingBranch by rememberSaveable { mutableStateOf(false) }
     var descriptionEditor by rememberSaveable { mutableStateOf(false) }; var selected by rememberSaveable { mutableStateOf(initialBranch) }
-    Screen { Loaded(repo, load = { state.api.obj("/repos/${repository(repo)}") }) { info ->
-        Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalAlignment = androidx.compose.ui.Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Screen(horizontalPadding = 0) { Loaded(repo, load = { state.api.obj("/repos/${repository(repo)}") }) { info ->
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), horizontalAlignment = androidx.compose.ui.Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(repo.substringBefore('/'), color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(repo.substringAfter('/'), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
             if (info.s("description").isNotBlank()) Text(info.s("description"), textAlign = androidx.compose.ui.text.style.TextAlign.End)
@@ -28,15 +28,15 @@ import org.json.JSONObject
                         state.api.change("/user/starred/$repo", if (starred) "DELETE" else "PUT")
                         if (!starred && repo !in state.favorites) state.favorite(repo)
                         state.refresh++
-                    } }) { Text("${if (starred) "?" else "?"} ${info.optInt("stargazers_count")}") }
+                    } }) { Text("${if (starred) "\u2605" else "\u2606"} ${info.optInt("stargazers_count")}") }
                 }
-                TextButton(onClick = { state.open(Page("community", "Forks", repo, arg = "forks")) }) { Text("? ${info.optInt("forks_count")}") }
+                TextButton(onClick = { state.open(Page("community", "Forks", repo, arg = "forks")) }) { Text("Forks ${info.optInt("forks_count")}") }
             }
         }
-        Group {
+        Group(modifier = Modifier.padding(horizontal = 16.dp)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 Box {
-                    TextButton(onClick = { menu = true }) { Text("???", modifier = Modifier.semanticsLabel("Repository options")) }
+                    TextButton(onClick = { menu = true }) { Text("\u22ef", modifier = Modifier.semanticsLabel("Repository options")) }
                     DropdownMenu(menu, onDismissRequest = { menu = false }) {
                         DropdownMenuItem(text = { Text("Share") }, onClick = { menu = false; context.startActivity(android.content.Intent.createChooser(android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain").putExtra(android.content.Intent.EXTRA_TEXT, "https://github.com/$repo"), "Share repository")) })
                         DropdownMenuItem(text = { Text("Edit description") }, enabled = info.o("permissions").optBoolean("admin"), onClick = { menu = false; descriptionEditor = true })
@@ -65,8 +65,8 @@ import org.json.JSONObject
         }
         val name = selected.ifBlank { info.s("default_branch") }
         Loaded(repo to name, load = { require(validBranch(name)); state.api.obj("/repos/$repo/git/ref/heads/$name").o("object").getString("sha") }) { sha ->
-            Group {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.End) { TextButton(onClick = { pickingBranch = true }) { Text("? $name ?") } }
+            Group(modifier = Modifier.padding(horizontal = 16.dp)) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.End) { TextButton(onClick = { pickingBranch = true }) { Text("$name \u2304") } }
                 RowLink("Code", icon = R.drawable.ic_repo) { state.open(Page("files", "Code", repo, sha = sha, branch = name)) }
                 RowLink("Commits", icon = R.drawable.ic_repo) { state.open(Page("commits", "Commits", repo, sha = sha, branch = name)) }
             }

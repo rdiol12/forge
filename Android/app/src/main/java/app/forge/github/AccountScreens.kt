@@ -73,7 +73,7 @@ import java.net.URI
             Note("Classic tokens: repo and notifications; user for profile/follow changes, project for Projects, workflow for workflow-file edits. Fine-grained tokens: Actions and Contents read; add write permissions for Actions controls, issue/PR/Discussion changes, README and releases. Visibility changes require Administration write and repository admin access. Inbox requires OAuth or a classic token.")
         }
         Group("Appearance") { Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Text("Show Copilot shortcut", Modifier.weight(1f)); Switch(state.showCopilot, { state.showCopilot = it; state.prefs.edit().putBoolean("copilot", it).apply() }) } }
-        Note("Forge ${BuildConfig.VERSION_NAME} · Native Android\nAn independent GitHub companion. Tokens stay encrypted on this device. Website sessions are separate. Downloaded files remain when you disconnect.")
+        Note("Forge · Version ${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})\nAn independent GitHub companion. Tokens stay encrypted on this device. Website sessions are separate. Downloaded files remain when you disconnect.")
         Group { RowLink("Open source licenses", "Octicons and Android libraries") { state.open(Page("licenses", "Licenses")) } }
     }
     if (disconnect) EditDialog("Disconnect GitHub?", emptyList(), "Active downloads will be cancelled. Saved files and favorites remain on this device.", "Disconnect", dismiss = { disconnect = false }) { state.disconnect() }

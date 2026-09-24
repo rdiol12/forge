@@ -42,6 +42,8 @@ class AppTest {
         compose.onNodeWithContentDescription("Create or add").performClick()
         compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("Sign in with GitHub").assertIsDisplayed()
+        compose.onNodeWithText("Forge · Version ${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})", substring = true).performScrollTo().assertIsDisplayed()
+        screenshot("settings-version")
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithText("Explore").performClick()
         compose.onNodeWithText("Search repositories or enter owner/name").assertIsDisplayed()
@@ -147,7 +149,7 @@ class AppTest {
         assertTrue(api.blob(repo, readme.getString("sha")).contains("Forge"))
         val document = api.readme(repo, sha).second
         assertTrue(document.html.contains("Forge"))
-        val png = api.data("/repos/$repo/contents/Forge/Assets.xcassets/AppIcon.appiconset/AppIcon.png", mapOf("ref" to sha))
+        val png = api.data("/repos/$repo/contents/Forge/Assets.xcassets/AppIcon.appiconset/ForgeIcon.png", mapOf("ref" to sha))
         assertArrayEquals(byteArrayOf(-119, 80, 78, 71), png.take(4).toByteArray())
         assertTrue(api.list("/repos/$repo/commits", query = mapOf("sha" to sha)).isNotEmpty())
         val runs = api.obj("/repos/$repo/actions/runs", mapOf("per_page" to "1", "status" to "success")).rows("workflow_runs")

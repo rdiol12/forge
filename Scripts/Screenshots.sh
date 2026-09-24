@@ -3,7 +3,7 @@
 set -euxo pipefail
 xcodebuild -project Forge.xcodeproj -scheme Forge -configuration Debug \
   -destination 'generic/platform=iOS Simulator' -derivedDataPath build-simulator \
-  CODE_SIGNING_ALLOWED=NO build 2>&1 | tee "$RUNNER_TEMP/simulator-build.log" | xcbeautify
+  CODE_SIGNING_ALLOWED=NO CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER:-1}" build 2>&1 | tee "$RUNNER_TEMP/simulator-build.log" | xcbeautify
 runtime=$(python3 - <<'PY'
 import json, subprocess
 # Fail promptly when CoreSimulator discovery stalls on a hosted runner.
@@ -36,7 +36,7 @@ xcrun simctl launch "$device" app.forge.github --forge-check-downloads
 python3 - "$data_dir/Documents/download-check.json" <<'PY'
 import pathlib, shutil, sys, time
 source = pathlib.Path(sys.argv[1])
-for _ in range(120):
+for _ in range(210):
     if source.exists():
         shutil.copyfile(source, 'dist/download-check.json')
         break
@@ -49,7 +49,7 @@ python3 - <<'PY'
 import json, pathlib
 result = json.loads(pathlib.Path('dist/download-check.json').read_text())
 print(result)
-assert result['status'] == 'passed', 'iPhone release download failed'
+assert result['status'] == 'passed', 'iPhone download check failed'
 PY
 xcrun simctl terminate "$device" app.forge.github
 xcrun simctl ui "$device" appearance light

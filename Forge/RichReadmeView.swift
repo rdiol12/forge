@@ -100,3 +100,10 @@ struct ReadmeCard: View {
         catch { if !Task.isCancelled { self.error = error.localizedDescription } }
     }
 }
+extension View {
+    @ViewBuilder func readmeSectionLayout() -> some View {
+        let section = self.listRowInsets(EdgeInsets()).listRowBackground(Color.clear).listRowSeparator(.hidden)
+        if #available(iOS 26.0, *) { section.listSectionMargins(.horizontal, 0) }
+        else { section }
+    }
+}

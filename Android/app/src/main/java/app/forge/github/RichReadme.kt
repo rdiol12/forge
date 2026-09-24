@@ -61,7 +61,7 @@ private fun emptyImage() = WebResourceResponse("text/plain", "UTF-8", ByteArrayI
 
 @Composable fun ReadmeCard(repo: String, branch: String, sha: String, canEdit: Boolean = true) {
     val state = LocalForge.current
-    Group {
+    Column(Modifier.fillMaxWidth()) {
         Loaded("$repo:$sha", load = { state.api.readme(repo, sha) }) { (file, document) ->
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                 if (canEdit && state.connected) TextButton(onClick = { state.open(Page("file", file.s("name"), repo, id = "edit", arg = file.s("path"), sha = file.s("sha"), branch = branch)) }) { Text("Edit") }

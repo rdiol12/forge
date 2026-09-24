@@ -2,6 +2,8 @@
 
 A native SwiftUI iOS and Kotlin/Jetpack Compose Android GitHub companion focused on **Actions, releases, and downloading their files**. Working name: Forge. Requires iOS 17 or Android 8.0 or later; no third-party iOS runtime dependencies, analytics, or AI service. Standard browser sign-in uses a small OAuth exchange backend.
 
+0.8.1 fixes iPhone release downloads, adds a shared Forge icon and the installed version/build in Settings, and gives repository READMEs the available width without a surrounding card. CI checks real release, Actions-artifact and repository-file downloads inside the iPhone simulator before publishing both apps.
+
 ## Implemented
 
 - Browser sign-in with GitHub using Apple AuthenticationServices, PKCE, state validation, and Keychain. Activation requires the OAuth registration described in Backend/README.md.

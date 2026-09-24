@@ -194,11 +194,10 @@ jobs:
             grep -Eq '^OK \([1-9][0-9]* tests?\)' ../dist/android-screenshots/instrumentation.txt
             adb install -r app/build/outputs/apk/release/app-release.apk
             adb shell am start -W -n app.forge.github/.MainActivity
-            sleep 3
             adb shell pidof app.forge.github
-            adb shell uiautomator dump /sdcard/forge-release.xml
-            adb shell cat /sdcard/forge-release.xml | grep 'text="Home"'
+            for attempt in 1 2 3 4 5; do adb shell uiautomator dump /sdcard/forge-release.xml > /dev/null; adb shell cat /sdcard/forge-release.xml > ../dist/android-screenshots/release-home.xml; grep -q 'text="Home"' ../dist/android-screenshots/release-home.xml && break; sleep 2; done
             adb exec-out screencap -p > ../dist/android-screenshots/release-home.png
+            grep -q 'text="Home"' ../dist/android-screenshots/release-home.xml
 
       - name: Verify and package the signed APK
         id: package
@@ -300,6 +299,8 @@ jobs:
 
           - **iOS 17+:** download Forge-unsigned.ipa and sign it with your sideloading tool before installing. No Apple certificate or provisioning profile is included.
           - **Android 8.0+:** download and install Forge-android.apk. It uses Forge's persistent signing key so future builds can update the same app.
+
+          Fixed the iPhone release-download failure when GitHub redirects with an empty response body. Added a shared GitHub-style Forge app icon and the installed version/build number in Settings. Repository READMEs use the available width without a surrounding card; the line below the branch selector is removed. The iPhone simulator now downloads and checks real release, Actions-artifact and repository files before publication.
 
           New in 0.8: repository cards and menus; README images, tables and editing; profile pins, followers and account editing; native issue creation with assignees, labels, milestones and Projects; Actions grouped by repository; releases sorted newest first; response caching and local download deletion. Includes branch switching, syntax-colored code, artifacts, per-release-file download counts, native Discussions, PR reviews and confirmed merges.
 
