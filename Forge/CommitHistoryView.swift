@@ -232,7 +232,7 @@ struct HistoryConflictEditor: View {
                 }
                 Section("Final result") {
                     Picker("Resolution", selection: $choice) {
-                        Text("Choose?").tag("")
+                        Text("Choose a resolution").tag("")
                         Text(conflict.current == nil ? "Keep file deleted" : "Keep current file").tag("current")
                         Text(conflict.requested == nil ? "Delete file as requested" : "Use requested file").tag("requested")
                         if conflict.canEdit { Text("Edit final file").tag("edit") }

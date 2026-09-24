@@ -111,11 +111,11 @@ import androidx.compose.ui.unit.dp
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(conflict.path, style = MaterialTheme.typography.titleMedium)
             Text("No branch was changed. Current is the result built so far; Requested is the complete file from the change being applied. Choosing a whole version can retain changes from the removed commit or discard other edits. Review before continuing.")
-            Row { listOf("Current", "Requested", "Base").forEachIndexed { index, title -> TextButton(onClick = { version = index }) { Text(if (version == index) "$title ?" else title) } } }
+            Row { listOf("Current", "Requested", "Base").forEachIndexed { index, title -> TextButton(onClick = { version = index }) { Text(if (version == index) "$title \u2713" else title) } } }
             if (source != null) Box(Modifier.height(250.dp)) { CodeReader(source, conflict.path) }
             else Text(entry?.let { "Preview unavailable for this type or size. Revision: ${it.sha}" } ?: "This version does not contain the file.")
             val choices = listOf("current" to if (conflict.current == null) "Keep file deleted" else "Keep current file", "requested" to if (conflict.requested == null) "Delete file as requested" else "Use requested file") + if (conflict.canEdit) listOf("edit" to "Edit final file") else emptyList()
-            choices.forEach { (value, label) -> OutlinedButton(onClick = { choice = value }, modifier = Modifier.fillMaxWidth()) { Text(if (choice == value) "$label ?" else label) } }
+            choices.forEach { (value, label) -> OutlinedButton(onClick = { choice = value }, modifier = Modifier.fillMaxWidth()) { Text(if (choice == value) "$label \u2713" else label) } }
             if (choice == "edit") OutlinedTextField(text, { text = it }, label = { Text("Final file contents") }, minLines = 5, maxLines = 10, modifier = Modifier.fillMaxWidth(), textStyle = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace))
             Text("All conflicts must be resolved before you confirm again to update the branch.", style = MaterialTheme.typography.bodySmall)
         }
