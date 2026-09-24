@@ -62,15 +62,19 @@ jobs:
             CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
             build 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" | xcbeautify
 
-      - name: Check the iPhone simulator layout
-        timeout-minutes: 8
+      - name: Check iPhone downloads and simulator layout
+        timeout-minutes: 10
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: bash Scripts/Screenshots.sh
 
       - name: Keep light and dark screenshots
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: Forge-screenshots-${{ github.run_number }}-${{ github.run_attempt }}
-          path: dist/screenshots/*.png
+          path: |
+            dist/screenshots/*.png
+            dist/download-check.json
           if-no-files-found: error
           retention-days: 14
 
@@ -112,6 +116,8 @@ jobs:
           path: |
             ${{ runner.temp }}/xcodebuild.log
             ${{ runner.temp }}/simulator-build.log
+            dist/download-check.json
+            dist/screenshots/download-check.png
           if-no-files-found: ignore
           retention-days: 7
 

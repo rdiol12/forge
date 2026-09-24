@@ -1,5 +1,5 @@
 #!/bin/bash
-# Simulator-only public favorites for a reproducible visual check; no credentials.
+# Simulator layout checks and a live download using an ephemeral CI read token.
 set -euxo pipefail
 xcodebuild -project Forge.xcodeproj -scheme Forge -configuration Debug \
   -destination 'generic/platform=iOS Simulator' -derivedDataPath build-simulator \
@@ -14,7 +14,7 @@ print(next(r['identifier'] for r in json.loads(result.stdout)['runtimes']
 PY
 )
 device=$(xcrun simctl create 'Forge visual check' com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro "$runtime")
-trap 'xcrun simctl shutdown "$device" || true' EXIT
+trap 'if [[ -n "${data_dir:-}" ]]; then rm -f "$data_dir/tmp/download-check-token"; fi; xcrun simctl shutdown "$device" || true' EXIT
 xcrun simctl boot "$device"
 xcrun simctl bootstatus "$device" -b
 xcrun simctl status_bar "$device" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
@@ -27,6 +27,31 @@ prefs.parent.mkdir(parents=True, exist_ok=True)
 prefs.write_bytes(plistlib.dumps({'repositories': ['github/roadmap', 'swiftlang/swift', 'cli/cli', 'actions/runner']}))
 PY
 mkdir -p dist/screenshots
+xcrun simctl ui "$device" appearance light
+set +x
+umask 077
+printf '%s' "${GH_TOKEN:?A temporary read token is required for the download check}" > "$data_dir/tmp/download-check-token"
+set -x
+xcrun simctl launch "$device" app.forge.github --forge-check-downloads
+python3 - "$data_dir/Documents/download-check.json" <<'PY'
+import pathlib, shutil, sys, time
+source = pathlib.Path(sys.argv[1])
+for _ in range(120):
+    if source.exists():
+        shutil.copyfile(source, 'dist/download-check.json')
+        break
+    time.sleep(1)
+else:
+    raise SystemExit('iPhone download check timed out')
+PY
+xcrun simctl io "$device" screenshot dist/screenshots/download-check.png
+python3 - <<'PY'
+import json, pathlib
+result = json.loads(pathlib.Path('dist/download-check.json').read_text())
+print(result)
+assert result['status'] == 'passed', 'iPhone release download failed'
+PY
+xcrun simctl terminate "$device" app.forge.github
 xcrun simctl ui "$device" appearance light
 xcrun simctl launch "$device" app.forge.github
 sleep 12

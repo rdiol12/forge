@@ -155,6 +155,38 @@ final class DownloadManager {
     }
 }
 
+#if DEBUG
+extension DownloadManager {
+    // Exercise the actual iOS transfer and sandbox, rather than a desktop API-only download.
+    func checkReleaseDownload() async {
+        let tokenFile = FileManager.default.temporaryDirectory.appendingPathComponent("download-check-token")
+        let resultFile = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("download-check.json")
+        var result: [String: String]
+        do {
+            let token = try String(contentsOf: tokenFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+            try FileManager.default.removeItem(at: tokenFile)
+            guard !token.isEmpty else { throw GitHubError("The simulator check needs its temporary read token.") }
+            let client = GitHubClient(token: token), repository = try Repository("rdiol12/forge")
+            guard let release = try await client.releases(in: repository).first else { throw GitHubError("No release to check.") }
+            guard let asset = try await client.assets(in: repository, releaseID: release.id, page: 1).first(where: { $0.name == "SHA256SUMS" }) else { throw GitHubError("Release checksums missing.") }
+            let specification = DownloadSpec.asset(asset, in: repository)
+            start(specification, client: client)
+            let deadline = Date().addingTimeInterval(90)
+            while entries.contains(where: { $0.specification.id == specification.id && $0.active }), Date() < deadline {
+                try await Task.sleep(for: .milliseconds(200))
+            }
+            guard let entry = entries.first(where: { $0.specification.id == specification.id }), let file = fileURL(for: entry) else {
+                throw GitHubError(entries.first(where: { $0.specification.id == specification.id })?.message ?? errorMessage ?? "Download did not finish.")
+            }
+            let contents = try String(contentsOf: file, encoding: .utf8)
+            guard contents.contains("Forge-unsigned.ipa"), contents.contains("Forge-android.apk") else { throw GitHubError("The saved file was not the release checksum file.") }
+            result = ["status": "passed", "check": "Release file saved through the iOS download manager", "bytes": String(contents.utf8.count)]
+        } catch { result = ["status": "failed", "error": error.localizedDescription] }
+        try? JSONEncoder().encode(result).write(to: resultFile, options: .atomic)
+    }
+}
+#endif
+
 private final class PreparationDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
     let onProgress: @Sendable (Double?) -> Void
     init(onProgress: @escaping @Sendable (Double?) -> Void) { self.onProgress = onProgress }
