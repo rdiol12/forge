@@ -1,3 +1,5 @@
+<p align="center"><a href="https://www.buymeacoffee.com/rdiol12" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="60" width="217"></a></p>
+
 # Forge
 
 A native SwiftUI iOS and Kotlin/Jetpack Compose Android GitHub companion focused on **Actions, releases, and downloading their files**. Working name: Forge. Requires iOS 17 or Android 8.0 or later; no third-party iOS runtime dependencies, analytics, or AI service. Standard browser sign-in uses a small OAuth exchange backend.
@@ -175,11 +177,3 @@ The memory cache is capped at 16 MiB/100 responses, respects cache-control, and 
 0.8 local validation (2026-09-24): 54 Swift core tests pass, including a real local bare-Git stale-update rejection, failed recovery persistence, cache invalidation/ETag revalidation and profile conflict checks. Android unit tests, compilation and lint pass. GitHub mutations are stubbed or tested in local Git; physical-device history writes and full browser OAuth onboarding still require device validation.
 
 Profile/follow changes require the classic `user` scope or the corresponding fine-grained account permissions. Projects need `read:project` for browsing and `project` for assignment. Workflow-file edits may need `workflow`. The read-only live check verified private README HTML/PNG, actual pins and commit/issue metadata; its developer token lacks `read:project`, and the permission error is surfaced without blocking issue creation.
-
----
-
-## Support ☕
-
-If my work saves you time, you can fuel the next project:
-
-<a href="https://www.buymeacoffee.com/rdiol12" target="_blank"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black" alt="Buy Me A Coffee" height="32"></a>
